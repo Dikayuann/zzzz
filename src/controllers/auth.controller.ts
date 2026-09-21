@@ -6,10 +6,12 @@ import {
     refreshTokenSchema,
     forgotPasswordSchema,
     resetPasswordSchema,
-    changePasswordSchema, } from "../schemas/auth.schema";
+    changePasswordSchema,
+    resendVerificationSchema, } from "../schemas/auth.schema";
 import {
     registerUser,
     verifyEmail,
+    resendVerificationEmail,
     loginUser,
     refreshAccessToken,
     logoutUser,
@@ -64,6 +66,24 @@ export const verifyEmailController = async (req: Request, res: Response) => {
         return res.status(500).json({ message: "Terjadi kesalahan internal"});
     }
  };
+
+export const resendVerificationController = async (req: Request, res: Response) => {
+    const result = resendVerificationSchema.safeParse(req.body);
+
+    if (!result.success) {
+        return res.status(400).json({
+            message: "Email tidak valid",
+            errors: result.error.issues.map((issue) => issue.message),
+        });
+    }
+
+    try {
+        const response = await resendVerificationEmail(result.data.email);
+        return res.status(200).json(response);
+    } catch (error: any) {
+        return res.status(500).json({ message: "Gagal mengirim ulang email verifikasi" });
+    }
+};
 
 export const loginController = async (req: Request, res: Response ) => {
     const result = loginSchema.safeParse(req.body);

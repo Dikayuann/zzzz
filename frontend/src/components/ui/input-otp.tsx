@@ -1,6 +1,5 @@
 import * as React from "react"
 import { OTPInput, OTPInputContext } from "input-otp"
-import { Dot } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const InputOTP = React.forwardRef<
@@ -10,7 +9,7 @@ const InputOTP = React.forwardRef<
   <OTPInput
     ref={ref}
     containerClassName={cn(
-      "flex items-center gap-2 has-[:disabled]:opacity-50",
+      "flex items-center gap-2 has-[:disabled]:opacity-50 justify-center",
       containerClassName
     )}
     className={cn("disabled:cursor-not-allowed", className)}
@@ -38,8 +37,9 @@ const InputOTPSlot = React.forwardRef<
     <div
       ref={ref}
       className={cn(
-        "relative flex h-11 w-10 sm:h-12 sm:w-11 items-center justify-center border-y border-r border-zinc-200 dark:border-zinc-800 text-sm sm:text-base font-semibold transition-all first:rounded-l-xl first:border-l last:rounded-r-xl",
-        isActive && "z-10 ring-2 ring-zinc-950 dark:ring-zinc-300 ring-offset-background",
+        "relative flex h-12 w-10 sm:h-14 sm:w-12 items-center justify-center border-y border-r border-slate-200 bg-white text-xl sm:text-2xl font-bold font-mono text-slate-800 shadow-xs transition-all first:rounded-l-xl first:border-l last:rounded-r-xl select-none",
+        char && "bg-sky-50/40 text-[#0284c7] border-sky-200",
+        isActive && "z-10 ring-2 ring-[#0284c7] ring-offset-1 border-sky-400 bg-white shadow-sm",
         className
       )}
       {...props}
@@ -47,7 +47,7 @@ const InputOTPSlot = React.forwardRef<
       {char}
       {hasFakeCaret && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className="h-5 w-px animate-caret-blink bg-zinc-900 dark:bg-zinc-100 duration-1000" />
+          <div className="h-6 w-0.5 animate-caret-blink bg-[#0284c7]" />
         </div>
       )}
     </div>
@@ -58,9 +58,9 @@ InputOTPSlot.displayName = "InputOTPSlot"
 const InputOTPSeparator = React.forwardRef<
   React.ElementRef<"div">,
   React.ComponentPropsWithoutRef<"div">
->(({ ...props }, ref) => (
-  <div ref={ref} role="separator" {...props}>
-    <Dot className="h-5 w-5 text-zinc-400" />
+>(({ className, ...props }, ref) => (
+  <div ref={ref} role="separator" className={cn("px-1 sm:px-2 text-slate-300 flex items-center justify-center", className)} {...props}>
+    <span className="w-2.5 h-0.5 rounded-full bg-slate-300" />
   </div>
 ))
 InputOTPSeparator.displayName = "InputOTPSeparator"

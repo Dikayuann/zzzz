@@ -1,106 +1,65 @@
 import React from "react";
-import { Radio, Users, FileEdit, Send } from "lucide-react";
-
-interface StepItem {
-  number: string;
-  title: string;
-  description: string;
-  icon: React.ElementType;
-  hint: string;
-}
-
-const stepsData: StepItem[] = [
-  {
-    number: "01",
-    title: "Hubungkan Saluran",
-    description:
-      "Konfigurasi server SMTP organisasi untuk pengiriman email, serta masukkan token Bot Telegram pribadi via BotFather.",
-    icon: Radio,
-    hint: "Koneksi terenkripsi & uji kirim instan",
-  },
-  {
-    number: "02",
-    title: "Kelola Audiens & Segmen",
-    description:
-      "Impor daftar penerima via file CSV/XLSX, kelompokkan dengan label tag, dan filter target dengan segmentasi dinamis.",
-    icon: Users,
-    hint: "Otomatis filter kontak opt-out",
-  },
-  {
-    number: "03",
-    title: "Susun Pesan & Merge Tags",
-    description:
-      "Tulis konten dengan dukungan HTML/Markdown dan sisipkan variabel personalisasi dinamis seperti {{first_name}}.",
-    icon: FileEdit,
-    hint: "Preview tampilan live per channel",
-  },
-  {
-    number: "04",
-    title: "Kirim & Pantau Metrik",
-    description:
-      "Eksekusi siaran pesan secara instan atau jadwalkan di masa depan. Pantau metrik delivery dan bounce rate secara real-time.",
-    icon: Send,
-    hint: "Throughput antrean RabbitMQ berkecepatan tinggi",
-  },
-];
+import { Link2, Users, Rocket } from "lucide-react";
 
 export const LandingHowItWorks: React.FC = () => {
+  const steps = [
+    {
+      num: "1",
+      icon: <Link2 className="w-5 h-5 text-white" />,
+      title: "Hubungkan Channel",
+      desc: "Masukkan kredensial server SMTP email atau token Bot Telegram Anda. Sistem akan menguji koneksi secara instan.",
+    },
+    {
+      num: "2",
+      icon: <Users className="w-5 h-5 text-white" />,
+      title: "Impor Kontak",
+      desc: "Upload daftar kontak dari file CSV atau Excel. Atur tag audiens dan variabel penerima untuk personalisasi nama.",
+    },
+    {
+      num: "3",
+      icon: <Rocket className="w-5 h-5 text-white" />,
+      title: "Kirim Campaign",
+      desc: "Susun template pesan, pilih saluran, lalu blast langsung atau jadwalkan. Pantau metrik pembacaan secara live.",
+    },
+  ];
+
   return (
-    <section
-      id="cara-kerja"
-      className="py-20 px-4 sm:px-6 max-w-6xl mx-auto border-t border-zinc-200/80 dark:border-zinc-800"
-    >
-      {/* Judul Section */}
-      <div className="text-center max-w-2xl mx-auto mb-16">
-        <span className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider">
-          Alur Kerja Sederhana
-        </span>
-        <h2 className="text-2xl sm:text-4xl font-extrabold tracking-tight text-zinc-900 dark:text-white mt-2">
-          Mulai siaran pesan dalam 4 langkah mudah
-        </h2>
-        <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
-          Dirancang intuitif agar proses broadcast massal dari persiapan hingga pelaporan selesai dalam hitungan menit.
-        </p>
-      </div>
+    <section id="cara-kerja" className="py-20 sm:py-28 bg-[#f8fafc] border-b border-slate-100">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Section Header */}
+        <div className="text-center max-w-2xl mx-auto mb-16">
+          <span className="inline-block text-xs font-bold uppercase tracking-wider text-[#0ea5e9] bg-sky-50 px-3 py-1 rounded-full border border-sky-100/80 mb-3">
+            Cara Kerja
+          </span>
+          <h2 className="text-2xl sm:text-4xl font-bold tracking-tight text-slate-900 leading-tight">
+            Jalan dalam tiga langkah.
+          </h2>
+          <p className="mt-3.5 text-xs sm:text-base text-slate-600 leading-relaxed">
+            Tidak perlu keahlian teknis khusus. Setup selesai dan mulai siaran dalam waktu kurang dari dua menit.
+          </p>
+        </div>
 
-      {/* Grid 4 Langkah */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stepsData.map((step) => {
-          const Icon = step.icon;
-          return (
+        {/* 3 Step Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative">
+          {steps.map((step, idx) => (
             <div
-              key={step.number}
-              className="relative p-6 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 flex flex-col justify-between hover:border-zinc-300 dark:hover:border-zinc-700 transition-all group"
+              key={idx}
+              className="p-8 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex flex-col items-start relative hover:shadow-md transition-shadow"
             >
-              <div>
-                {/* Header Step: Nomor & Icon */}
-                <div className="flex items-center justify-between mb-5">
-                  <span className="text-2xl font-mono font-black text-zinc-300 dark:text-zinc-700 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                    {step.number}
-                  </span>
-                  <div className="h-10 w-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <Icon className="h-5 w-5" />
-                  </div>
-                </div>
-
-                {/* Judul & Penjelasan */}
-                <h3 className="text-base font-bold text-zinc-900 dark:text-white mb-2">
-                  {step.title}
-                </h3>
-                <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                  {step.description}
-                </p>
+              {/* Number Badge */}
+              <div className="w-10 h-10 rounded-xl bg-[#0ea5e9] text-white font-bold text-sm flex items-center justify-center shadow-md shadow-sky-500/20 mb-6">
+                {step.num}
               </div>
 
-              {/* Hint Tambahan di Bawah */}
-              <div className="mt-6 pt-4 border-t border-zinc-100 dark:border-zinc-800/80">
-                <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400">
-                  ✓ {step.hint}
-                </span>
-              </div>
+              <h3 className="text-lg font-bold text-slate-900 mb-2">
+                {step.title}
+              </h3>
+              <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                {step.desc}
+              </p>
             </div>
-          );
-        })}
+          ))}
+        </div>
       </div>
     </section>
   );

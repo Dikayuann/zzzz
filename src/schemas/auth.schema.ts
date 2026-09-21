@@ -55,6 +55,11 @@ z.object({
 
 
 
+// resend verification schema
+export const resendVerificationSchema = z.object({
+    email: z.string().email("Format email tidak valid"),
+});
+
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type VerifyEmailInput = z.infer<typeof verifiyEmailSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
@@ -62,3 +67,4 @@ export type RefreshTokenInput = z.infer<typeof refreshTokenSchema>
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+export type ResendVerificationInput = z.infer<typeof resendVerificationSchema>;

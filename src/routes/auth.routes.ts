@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
     registerController,
     verifyEmailController,
+    resendVerificationController,
     loginController,
     refreshTokenController,
     logoutController,
@@ -57,6 +58,27 @@ router.post('/register', registerController);
  *         description: Email berhasil diverifikasi
  */
 router.post('/verify-email', verifyEmailController);
+
+/**
+ * @openapi
+ * /auth/resend-verification:
+ *   post:
+ *     summary: Kirim ulang link verifikasi email
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email]
+ *             properties:
+ *               email: { type: string, example: "budi@example.com" }
+ *     responses:
+ *       200:
+ *         description: Email verifikasi baru dikirim
+ */
+router.post('/resend-verification', resendVerificationController);
 
 /**
  * @openapi

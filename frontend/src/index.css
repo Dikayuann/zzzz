@@ -94,3 +94,116 @@
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground) / 0.5);
 }
+
+/* ======================================================== */
+/* ORGANIC CLOUD DRIFT (100% VECTOR SVG, ZERO BLUR FILTER)  */
+/* ======================================================== */
+@keyframes cloud-drift-1 {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(40px, -15px, 0) scaleY(1.05);
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes cloud-drift-2 {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(-35px, 12px, 0) scaleY(0.95);
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.animate-cloud-1 {
+  will-change: transform;
+  animation: cloud-drift-1 14s ease-in-out infinite;
+}
+
+.animate-cloud-2 {
+  will-change: transform;
+  animation: cloud-drift-2 18s ease-in-out infinite;
+}
+
+@keyframes cloud-drift-3 {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(25px, -8px, 0) scale(1.02);
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.animate-cloud-3 {
+  will-change: transform;
+  animation: cloud-drift-3 22s ease-in-out infinite;
+}
+
+/* ======================================================== */
+/* FLOATING DASHBOARD ANIMATION (LOGIN & AUTH BRANDING)      */
+/* ======================================================== */
+@keyframes dashboard-float {
+  0%, 100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -12px, 0);
+  }
+}
+
+@keyframes badge-float {
+  0%, 100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(4px, -8px, 0);
+  }
+}
+
+@keyframes bar-pulse {
+  0%, 100% {
+    opacity: 0.9;
+    filter: brightness(1);
+  }
+  50% {
+    opacity: 1;
+    filter: brightness(1.2);
+  }
+}
+
+.animate-dashboard-float {
+  will-change: transform;
+  animation: dashboard-float 5.5s ease-in-out infinite;
+}
+
+.animate-badge-float {
+  will-change: transform;
+  animation: badge-float 4.2s ease-in-out infinite;
+}
+
+.animate-bar-pulse {
+  animation: bar-pulse 3s ease-in-out infinite;
+}
+
+@keyframes caret-blink {
+  0%, 70%, 100% {
+    opacity: 1;
+  }
+  20%, 50% {
+    opacity: 0;
+  }
+}
+
+.animate-caret-blink {
+  animation: caret-blink 1.2s ease-out infinite;
+}

@@ -17,8 +17,8 @@ const JWT_SECRET = process.env.JWT_SECRET || "default_jwt_secret"
 export const registerUser = async (data: RegisterInput) => {
     const passwordHash = await bcrypt.hash(data.password, BCRYPT_ROUNDS);
 
-    // Buat raw token acak 64 karakter & hash SHA-256 untuk disimpan ke DB
-    const rawToken = crypto.randomBytes(32).toString("hex");
+    // Buat kode OTP 6 digit acak & hash SHA-256 untuk disimpan ke DB
+    const rawToken = Math.floor(100000 + crypto.randomInt(900000)).toString();
     const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 menit
 
@@ -108,6 +108,38 @@ export const verifyEmail = async (data: VerifyEmailInput) => {
     });
 };
 
+// resend verification email
+export const resendVerificationEmail = async (email: string) => {
+    const user = await prisma.user.findUnique({
+        where: { email },
+    });
+
+    if (!user) {
+        return { success: true, message: "Jika email terdaftar, instruksi verifikasi telah dikirim." };
+    }
+
+    if (user.status === "ACTIVE") {
+        return { success: true, message: "Akun sudah aktif. Silakan langsung login." };
+    }
+
+    const rawToken = Math.floor(100000 + crypto.randomInt(900000)).toString();
+    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 menit
+
+    await prisma.emailVerification.create({
+        data: {
+            userId: user.id,
+            tokenHash,
+            expiresAt,
+        },
+    });
+
+    return {
+        success: true,
+        message: "Kode OTP baru telah dikirim ke email Anda.",
+        verificationToken: rawToken,
+    };
+};
 
 export const loginUser = async (data: LoginInput ) => {
     // menacari user berdasarkan email
