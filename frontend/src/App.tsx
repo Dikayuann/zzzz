@@ -6,6 +6,9 @@ import { LoginPage } from "@/pages/auth/LoginPage";
 import { RegisterPage } from "@/pages/auth/RegisterPage";
 import { VerifyEmailPage } from "@/pages/auth/VerifyEmailPage";
 import { DashboardPage } from "@/pages/dashboard/DashboardPage";
+import { CampaignsPage } from "@/pages/campaigns/CampaignsPage";
+import { NewCampaignPage } from "@/pages/campaigns/NewCampaignPage";
+import { ContactsPage } from "@/pages/contacts/ContactsPage";
 import { Toaster } from "@/components/ui/sonner";
 import { LandingPage } from "@/pages/landing/LandingPage";
 
@@ -29,30 +32,9 @@ export default function App() {
             }
           >
             <Route path="/dashboard" element={<DashboardPage />} />
-
-            {/* Rute-rute yang akan kita bangun sesuai roadmap */}
-            <Route
-              path="/campaigns"
-              element={
-                <div className="p-8 text-center border-2 border-dashed rounded-xl bg-card">
-                  <h3 className="text-lg font-bold">Modul Campaigns (Blast Baru)</h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Multi-channel campaign wizard (Telegram & SMTP Email)
-                  </p>
-                </div>
-              }
-            />
-            <Route
-              path="/contacts"
-              element={
-                <div className="p-8 text-center border-2 border-dashed rounded-xl bg-card">
-                  <h3 className="text-lg font-bold">Modul Contacts (Daftar Penerima)</h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Import CSV/XLSX, tag, dan segmentasi dinamis
-                  </p>
-                </div>
-              }
-            />
+            <Route path="/campaigns" element={<CampaignsPage />} />
+            <Route path="/campaigns/new" element={<NewCampaignPage />} />
+            <Route path="/contacts" element={<ContactsPage />} />
             <Route
               path="/templates"
               element={

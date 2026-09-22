@@ -1,329 +1,371 @@
-import React from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState } from "react";
 import {
-  Send,
-  Mail,
-  MessageSquare,
-  Users,
-  CheckCircle2,
-  Clock,
-  ArrowUpRight,
   TrendingUp,
-  Plus,
-  Radio,
-  ExternalLink,
+  TrendingDown,
+  ChevronDown,
+  Check,
 } from "lucide-react";
-import { useAuth } from "@/context/AuthContext";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+} from "recharts";
+import { useAuth } from "@/context/AuthContext";
 
-// Sample initial data for demonstrating dashboard capabilities
-const recentCampaigns = [
-  {
-    id: "camp_1",
-    name: "Flash Sale Promo Ramadhan 2026",
-    channels: ["EMAIL", "TELEGRAM"],
-    status: "COMPLETED",
-    audience: 2450,
-    delivered: 2412,
-    date: "16 Sep 2026, 10:30",
-  },
-  {
-    id: "camp_2",
-    name: "Pengumuman Maintenance Server & Downtime",
-    channels: ["TELEGRAM"],
-    status: "COMPLETED",
-    audience: 840,
-    delivered: 840,
-    date: "15 Sep 2026, 22:00",
-  },
-  {
-    id: "camp_3",
-    name: "Newsletter Mingguan: Tips Optimasi Bisnis",
-    channels: ["EMAIL"],
-    status: "SCHEDULED",
-    audience: 1890,
-    delivered: 0,
-    date: "18 Sep 2026, 09:00",
-  },
-  {
-    id: "camp_4",
-    name: "Survey Kepuasan Pelanggan Q3",
-    channels: ["EMAIL", "TELEGRAM"],
-    status: "DRAFT",
-    audience: 1200,
-    delivered: 0,
-    date: "14 Sep 2026, 14:15",
-  },
+// Data volume pesan harian: terkirim vs dibuka (Sen - Min)
+const weeklyVolumeData = [
+  { day: "Sen", terkirim: 4200, dibuka: 1500 },
+  { day: "Sel", terkirim: 6800, dibuka: 2300 },
+  { day: "Rab", terkirim: 3800, dibuka: 1400 },
+  { day: "Kam", terkirim: 9200, dibuka: 3900 },
+  { day: "Jum", terkirim: 8400, dibuka: 3100 },
+  { day: "Sab", terkirim: 2900, dibuka: 950 },
+  { day: "Min", terkirim: 2100, dibuka: 650 },
 ];
 
 export const DashboardPage: React.FC = () => {
   const { user } = useAuth();
-  const navigate = useNavigate();
+  const [selectedChannel, setSelectedChannel] = useState<"Semua" | "Email" | "Telegram" | "WhatsApp">("Semua");
+  const [selectedRange, setSelectedRange] = useState("7 hari terakhir");
+
+  // Format greeting berdasarkan waktu
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 11) return "Selamat pagi";
+    if (hour < 15) return "Selamat siang";
+    if (hour < 18) return "Selamat sore";
+    return "Selamat malam";
+  };
+
+  const userName = user?.name ? user.name.split(" ")[0] : "Sarah";
 
   return (
-    <div className="space-y-8 animate-in fade-in-50 duration-300">
-      {/* Welcome Banner */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b pb-6">
+    <div className="space-y-6 max-w-7xl mx-auto">
+      {/* 1. HEADER SECTION: GREETING & DATE FILTER */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
-            Selamat Datang, {user?.name || "Admin"}! 👋
-          </h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Pantau dan kelola siaran massal Email serta Telegram dari satu dashboard terpusat.
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+            {getGreeting()}, {userName}
+          </h1>
+          <p className="text-xs text-slate-500 mt-1">
+            Begini performa kampanye kamu minggu ini.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            className="gap-2"
-            onClick={() => navigate("/channels")}
-          >
-            <Radio className="h-4 w-4 text-blue-500" />
-            Cek Channel
-          </Button>
-          <Button
-            variant="gradient"
-            className="gap-2 shadow-md shadow-blue-500/20"
-            onClick={() => navigate("/campaigns")}
-          >
-            <Plus className="h-4 w-4" />
-            Kirim Blast Baru
-          </Button>
-        </div>
+        {/* Date Range Selector */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="flex items-center gap-2 rounded-xl border border-slate-200/90 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 transition cursor-pointer self-start sm:self-auto outline-none">
+              <span>{selectedRange}</span>
+              <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44 rounded-xl">
+            {["7 hari terakhir", "30 hari terakhir", "Bulan ini", "Sepanjang waktu"].map((range) => (
+              <DropdownMenuItem
+                key={range}
+                onClick={() => setSelectedRange(range)}
+                className="cursor-pointer text-xs font-medium flex items-center justify-between"
+              >
+                <span>{range}</span>
+                {selectedRange === range && <Check className="h-3.5 w-3.5 text-sky-600" />}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
-      {/* 4 Stat Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {/* Total Broadcasted */}
-        <Card className="hover:shadow-md transition-all border-slate-200/80 dark:border-slate-800">
-          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              Total Pesan Terkirim
-            </CardTitle>
-            <div className="h-8 w-8 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-              <Send className="h-4 w-4" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">18,450</div>
-            <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1 font-medium">
-              <span className="text-emerald-600 dark:text-emerald-400 flex items-center font-bold">
-                <TrendingUp className="h-3 w-3 mr-0.5 inline" /> +14.2%
-              </span>{" "}
-              dari bulan lalu
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Telegram Blast */}
-        <Card className="hover:shadow-md transition-all border-slate-200/80 dark:border-slate-800">
-          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              Telegram Blast
-            </CardTitle>
-            <div className="h-8 w-8 rounded-lg bg-sky-500/10 text-sky-600 dark:text-sky-400 flex items-center justify-center">
-              <MessageSquare className="h-4 w-4" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">7,820</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Delivery rate <strong className="text-foreground">99.8%</strong> (Instant)
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Email Blast */}
-        <Card className="hover:shadow-md transition-all border-slate-200/80 dark:border-slate-800">
-          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              Email Blast (SMTP)
-            </CardTitle>
-            <div className="h-8 w-8 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
-              <Mail className="h-4 w-4" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">10,630</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Open rate <strong className="text-foreground">38.5%</strong> · 12 bounces
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Target Contacts */}
-        <Card className="hover:shadow-md transition-all border-slate-200/80 dark:border-slate-800">
-          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              Total Kontak & Target
-            </CardTitle>
-            <div className="h-8 w-8 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-              <Users className="h-4 w-4" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">3,290</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Terverifikasi & Opt-in aktif
-            </p>
-          </CardContent>
-        </Card>
+      {/* 2. CHANNEL TABS / FILTERS */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+        <button
+          onClick={() => setSelectedChannel("Semua")}
+          className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+            selectedChannel === "Semua"
+              ? "bg-[#0284c7] text-white shadow-xs shadow-sky-600/20"
+              : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
+          }`}
+        >
+          Semua
+        </button>
+        <button
+          onClick={() => setSelectedChannel("Email")}
+          className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+            selectedChannel === "Email"
+              ? "bg-[#0284c7] text-white shadow-xs shadow-sky-600/20"
+              : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
+          }`}
+        >
+          Email
+        </button>
+        <button
+          onClick={() => setSelectedChannel("Telegram")}
+          className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+            selectedChannel === "Telegram"
+              ? "bg-[#0284c7] text-white shadow-xs shadow-sky-600/20"
+              : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
+          }`}
+        >
+          Telegram
+        </button>
+        <button
+          onClick={() => setSelectedChannel("WhatsApp")}
+          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+            selectedChannel === "WhatsApp"
+              ? "bg-[#0284c7] text-white shadow-xs shadow-sky-600/20"
+              : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
+          }`}
+        >
+          <span className="h-2 w-2 rounded-full bg-emerald-500" />
+          <span>WhatsApp</span>
+        </button>
       </div>
 
-      {/* Channel Readiness Status Banner */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-2xl border p-5 bg-gradient-to-r from-blue-50/50 to-indigo-50/30 dark:from-blue-950/20 dark:to-indigo-950/20 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="h-12 w-12 rounded-xl bg-blue-600/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-              <MessageSquare className="h-6 w-6" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h4 className="font-semibold text-sm">Telegram Bot Channel</h4>
-                <Badge variant="success" className="text-[10px]">
-                  Siap Blast
-                </Badge>
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Bot aktif terhubung ke Telegram Bot API untuk broadcast langsung ke chat/grup.
-              </p>
-            </div>
+      {/* 3. 5 KPI CARDS (TERKIRIM, TERSAMPAIKAN, DIBUKA, DIKLIK, GAGAL/BOUNCED) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+        {/* Card 1: TERKIRIM */}
+        <Card className="border-slate-200/80 shadow-2xs rounded-2xl bg-white p-4">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+            TERKIRIM
+          </p>
+          <div className="text-2xl font-bold tracking-tight text-slate-900 mt-2">
+            24,340
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-xs"
-            onClick={() => navigate("/channels")}
-          >
-            Kelola <ArrowUpRight className="h-3.5 w-3.5 ml-1" />
-          </Button>
-        </div>
-
-        <div className="rounded-2xl border p-5 bg-gradient-to-r from-amber-50/50 to-orange-50/30 dark:from-amber-950/20 dark:to-orange-950/20 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="h-12 w-12 rounded-xl bg-amber-600/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
-              <Mail className="h-6 w-6" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h4 className="font-semibold text-sm">SMTP Email Server</h4>
-                <Badge variant="success" className="text-[10px]">
-                  Terkonfigurasi
-                </Badge>
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Kredensial SMTP organisasi siap digunakan untuk pengiriman email massal.
-              </p>
-            </div>
+          <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 mt-1.5">
+            <TrendingUp className="h-3.5 w-3.5" />
+            <span>+8.4% vs minggu lalu</span>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-xs"
-            onClick={() => navigate("/channels")}
-          >
-            Kelola <ArrowUpRight className="h-3.5 w-3.5 ml-1" />
-          </Button>
-        </div>
+        </Card>
+
+        {/* Card 2: TERSAMPAIKAN */}
+        <Card className="border-slate-200/80 shadow-2xs rounded-2xl bg-white p-4">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+            TERSAMPAIKAN
+          </p>
+          <div className="text-2xl font-bold tracking-tight text-slate-900 mt-2">
+            23,891
+          </div>
+          <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 mt-1.5">
+            <TrendingUp className="h-3.5 w-3.5" />
+            <span>+7.9% vs minggu lalu</span>
+          </div>
+        </Card>
+
+        {/* Card 3: DIBUKA */}
+        <Card className="border-slate-200/80 shadow-2xs rounded-2xl bg-white p-4">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+            DIBUKA
+          </p>
+          <div className="text-2xl font-bold tracking-tight text-slate-900 mt-2">
+            8,201
+          </div>
+          <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 mt-1.5">
+            <TrendingUp className="h-3.5 w-3.5" />
+            <span>+12.1% vs minggu lalu</span>
+          </div>
+        </Card>
+
+        {/* Card 4: DIKLIK */}
+        <Card className="border-slate-200/80 shadow-2xs rounded-2xl bg-white p-4">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+            DIKLIK
+          </p>
+          <div className="text-2xl font-bold tracking-tight text-slate-900 mt-2">
+            2,128
+          </div>
+          <div className="flex items-center gap-1 text-[11px] font-semibold text-rose-500 mt-1.5">
+            <TrendingDown className="h-3.5 w-3.5" />
+            <span>-2.3% vs minggu lalu</span>
+          </div>
+        </Card>
+
+        {/* Card 5: GAGAL/BOUNCED */}
+        <Card className="border-slate-200/80 shadow-2xs rounded-2xl bg-white p-4">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+            GAGAL/BOUNCED
+          </p>
+          <div className="text-2xl font-bold tracking-tight text-slate-900 mt-2">
+            449
+          </div>
+          <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 mt-1.5">
+            <TrendingDown className="h-3.5 w-3.5" />
+            <span>-0.5% vs minggu lalu</span>
+          </div>
+        </Card>
       </div>
 
-      {/* Recent Campaigns Table */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+      {/* 4. MAIN 2-COLUMN SECTION: VOLUME CHART + DISTRIBUSI CHANNEL */}
+      <div className="grid gap-4 lg:grid-cols-12">
+        {/* Left Card: Volume pesan minggu ini (8 of 12 columns) */}
+        <Card className="lg:col-span-8 border-slate-200/80 shadow-2xs rounded-2xl bg-white">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <div>
+              <CardTitle className="text-sm font-bold text-slate-900">
+                Volume pesan minggu ini
+              </CardTitle>
+              <CardDescription className="text-xs text-slate-400 mt-0.5">
+                Harian: terkirim vs dibuka
+              </CardDescription>
+            </div>
+
+            {/* Legend */}
+            <div className="flex items-center gap-4 text-xs">
+              <div className="flex items-center gap-1.5 text-slate-600">
+                <span className="h-2.5 w-2.5 rounded-full bg-[#bae6fd]" />
+                <span>Terkirim</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-slate-600">
+                <span className="h-2.5 w-2.5 rounded-full bg-[#0284c7]" />
+                <span>Dibuka</span>
+              </div>
+            </div>
+          </CardHeader>
+
+          <CardContent className="pt-4">
+            <div className="h-72 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={weeklyVolumeData}
+                  margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                  barGap={6}
+                >
+                  <XAxis
+                    dataKey="day"
+                    stroke="#94a3b8"
+                    fontSize={12}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis
+                    stroke="#94a3b8"
+                    fontSize={12}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(value) => `${value}`}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "rgba(255, 255, 255, 0.96)",
+                      borderRadius: "0.75rem",
+                      border: "1px solid #e2e8f0",
+                      fontSize: "12px",
+                      boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.05)",
+                    }}
+                  />
+                  <Bar
+                    dataKey="terkirim"
+                    name="Terkirim"
+                    fill="#bae6fd"
+                    radius={[4, 4, 0, 0]}
+                    maxBarSize={32}
+                  />
+                  <Bar
+                    dataKey="dibuka"
+                    name="Dibuka"
+                    fill="#0284c7"
+                    radius={[4, 4, 0, 0]}
+                    maxBarSize={32}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Right Card: Distribusi channel (4 of 12 columns) */}
+        <Card className="lg:col-span-4 border-slate-200/80 shadow-2xs rounded-2xl bg-white p-5 flex flex-col justify-between">
           <div>
-            <CardTitle>Riwayat Broadcast Terakhir</CardTitle>
-            <CardDescription>
-              Daftar status pengiriman campaign melalui Email dan Telegram
-            </CardDescription>
+            <h2 className="text-sm font-bold text-slate-900 mb-5">
+              Distribusi channel
+            </h2>
+
+            {/* Channels Progress */}
+            <div className="space-y-4">
+              {/* Email */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2 font-medium text-slate-700">
+                    <span className="h-2 w-2 rounded-full bg-blue-600" />
+                    <span>Email</span>
+                  </div>
+                  <span className="font-bold text-slate-900">53%</span>
+                </div>
+                <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
+                  <div className="h-full rounded-full bg-blue-600 w-[53%]" />
+                </div>
+              </div>
+
+              {/* Telegram */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2 font-medium text-slate-700">
+                    <span className="h-2 w-2 rounded-full bg-sky-500" />
+                    <span>Telegram</span>
+                  </div>
+                  <span className="font-bold text-slate-900">25%</span>
+                </div>
+                <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
+                  <div className="h-full rounded-full bg-sky-500 w-[25%]" />
+                </div>
+              </div>
+
+              {/* WhatsApp */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2 font-medium text-slate-700">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                    <span>WhatsApp</span>
+                  </div>
+                  <span className="font-bold text-slate-900">22%</span>
+                </div>
+                <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
+                  <div className="h-full rounded-full bg-emerald-500 w-[22%]" />
+                </div>
+              </div>
+            </div>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-xs gap-1.5"
-            onClick={() => navigate("/campaigns")}
-          >
-            Lihat Semua <ExternalLink className="h-3.5 w-3.5" />
-          </Button>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nama Campaign</TableHead>
-                <TableHead>Saluran</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Target Penerima</TableHead>
-                <TableHead>Waktu Kirim</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {recentCampaigns.map((camp) => (
-                <TableRow key={camp.id} className="cursor-pointer hover:bg-muted/40">
-                  <TableCell className="font-medium">
-                    <div className="flex flex-col">
-                      <span className="text-foreground">{camp.name}</span>
-                      <span className="text-[11px] text-muted-foreground">{camp.id}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1.5">
-                      {camp.channels.includes("EMAIL") && (
-                        <Badge variant="secondary" className="gap-1 text-[11px] font-medium">
-                          <Mail className="h-3 w-3 text-amber-500" />
-                          Email
-                        </Badge>
-                      )}
-                      {camp.channels.includes("TELEGRAM") && (
-                        <Badge variant="secondary" className="gap-1 text-[11px] font-medium">
-                          <MessageSquare className="h-3 w-3 text-sky-500" />
-                          Telegram
-                        </Badge>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {camp.status === "COMPLETED" && (
-                      <Badge variant="success" className="gap-1 text-[11px]">
-                        <CheckCircle2 className="h-3 w-3" />
-                        Selesai
-                      </Badge>
-                    )}
-                    {camp.status === "SCHEDULED" && (
-                      <Badge variant="info" className="gap-1 text-[11px]">
-                        <Clock className="h-3 w-3" />
-                        Terjadwal
-                      </Badge>
-                    )}
-                    {camp.status === "DRAFT" && (
-                      <Badge variant="outline" className="text-[11px]">
-                        Draft
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-sm">
-                    <span className="font-semibold">{camp.delivered}</span>
-                    <span className="text-muted-foreground"> / {camp.audience} penerima</span>
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {camp.date}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+
+          {/* Quick Metrics Divider & Stats */}
+          <div className="pt-6 mt-6 border-t border-slate-100 space-y-3">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-500 font-medium">Total kontak</span>
+              <span className="font-bold text-slate-900">8,910</span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-500 font-medium">List aktif</span>
+              <span className="font-bold text-slate-900">14</span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-500 font-medium">Template</span>
+              <span className="font-bold text-slate-900">23</span>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* Floating Help Circle Button (Bottom Right) */}
+      <button
+        type="button"
+        title="Bantuan & Dukungan"
+        className="fixed bottom-6 right-6 z-40 flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-white font-bold text-xs shadow-lg hover:bg-slate-800 transition cursor-pointer hover:scale-105 active:scale-95"
+      >
+        <span className="text-sm font-semibold">?</span>
+      </button>
     </div>
   );
 };
