@@ -85,7 +85,7 @@ export const AppSidebar: React.FC = () => {
     {
       title: "Account",
       icon: Settings,
-      path: "/channels",
+      path: "/account",
     },
   ];
 

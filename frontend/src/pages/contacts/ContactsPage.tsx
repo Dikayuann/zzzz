@@ -30,11 +30,18 @@ import { toast } from "sonner";
 
 export type ContactStatus = "Active" | "Unsubscribed" | "Bounced";
 
+export interface ContactConsent {
+  email: boolean; // true: opt-in, false: opt-out
+  telegram: boolean; // true: active, false: inactive
+  whatsapp: boolean; // true: active, false: inactive
+}
+
 export interface ContactItem {
   id: string;
   name: string;
   email: string;
-  phone?: string;
+  whatsapp?: string;
+  consent: ContactConsent;
   status: ContactStatus;
   joinedDate: string;
   tags: string[];
@@ -47,89 +54,97 @@ const INITIAL_CONTACTS: ContactItem[] = [
     id: "ct-1",
     name: "Budi Santoso",
     email: "budi.santoso@startup.id",
-    phone: "+62 812-3456-7890",
+    whatsapp: "+62 812-3456-7890",
+    consent: { email: true, telegram: true, whatsapp: true },
     status: "Active",
     joinedDate: "Jan 12, 2026",
     tags: ["customer", "vip"],
-    initialsBg: "bg-indigo-100",
-    initialsColor: "text-indigo-700",
+    initialsBg: "bg-sky-100",
+    initialsColor: "text-sky-700",
   },
   {
     id: "ct-2",
     name: "Rina Wijaya",
     email: "rina.w@tokoonline.com",
-    phone: "+62 813-9876-5432",
+    whatsapp: "+62 857-2345-6789",
+    consent: { email: true, telegram: false, whatsapp: true },
     status: "Active",
     joinedDate: "Mar 3, 2026",
     tags: ["customer", "newsletter"],
-    initialsBg: "bg-indigo-100",
-    initialsColor: "text-indigo-700",
+    initialsBg: "bg-sky-100",
+    initialsColor: "text-sky-700",
   },
   {
     id: "ct-3",
     name: "Ahmad Fauzi",
     email: "ahmad@kreatifindonesia.co",
-    phone: "+62 811-2345-6789",
+    whatsapp: undefined,
+    consent: { email: true, telegram: true, whatsapp: false },
     status: "Active",
     joinedDate: "May 20, 2026",
     tags: ["vip", "webinar"],
-    initialsBg: "bg-indigo-100",
-    initialsColor: "text-indigo-700",
+    initialsBg: "bg-sky-100",
+    initialsColor: "text-sky-700",
   },
   {
     id: "ct-4",
     name: "Dewi Puspita",
     email: "dewi.puspita@mailme.id",
-    phone: "+62 815-6789-0123",
+    whatsapp: "+62 813-4567-8901",
+    consent: { email: false, telegram: false, whatsapp: false },
     status: "Unsubscribed",
     joinedDate: "Feb 8, 2026",
     tags: ["trial"],
-    initialsBg: "bg-indigo-100",
-    initialsColor: "text-indigo-700",
+    initialsBg: "bg-sky-100",
+    initialsColor: "text-sky-700",
   },
   {
     id: "ct-5",
     name: "Hendra Gunawan",
     email: "hendra.g@techwave.id",
-    phone: "+62 817-1234-5678",
+    whatsapp: "+62 878-5678-9012",
+    consent: { email: true, telegram: false, whatsapp: true },
     status: "Active",
     joinedDate: "Jun 15, 2026",
     tags: ["customer", "webinar"],
-    initialsBg: "bg-indigo-100",
-    initialsColor: "text-indigo-700",
+    initialsBg: "bg-sky-100",
+    initialsColor: "text-sky-700",
   },
   {
     id: "ct-6",
     name: "Siti Rahayu",
     email: "siti.rahayu@nusantara.co",
-    phone: "+62 819-8765-4321",
+    whatsapp: "+62 819-8765-4321",
+    consent: { email: true, telegram: false, whatsapp: true },
     status: "Active",
     joinedDate: "Apr 2, 2026",
     tags: ["newsletter"],
-    initialsBg: "bg-indigo-100",
-    initialsColor: "text-indigo-700",
+    initialsBg: "bg-sky-100",
+    initialsColor: "text-sky-700",
   },
   {
     id: "ct-7",
     name: "Fajar Nugroho",
     email: "fajar.n@digitalstudio.id",
-    phone: "+62 821-3456-7890",
+    whatsapp: "+62 821-3456-7890",
+    consent: { email: false, telegram: false, whatsapp: false },
     status: "Bounced",
     joinedDate: "Jul 22, 2026",
     tags: ["trial"],
-    initialsBg: "bg-indigo-100",
-    initialsColor: "text-indigo-700",
+    initialsBg: "bg-sky-100",
+    initialsColor: "text-sky-700",
   },
   {
     id: "ct-8",
     name: "Maya Indah",
     email: "maya.indah@corpora.id",
-    phone: "+62 822-9012-3456",
+    whatsapp: "+62 822-9012-3456",
+    consent: { email: true, telegram: true, whatsapp: true },
     status: "Active",
     joinedDate: "Aug 11, 2026",
     tags: ["vip", "customer", "newsletter"],
-    initialsBg: "bg-indigo-100",
-    initialsColor: "text-indigo-700",
+    initialsBg: "bg-sky-100",
+    initialsColor: "text-sky-700",
   },
 ];
 
@@ -149,7 +164,7 @@ export const ContactsPage: React.FC = () => {
   // New Contact Form State
   const [newName, setNewName] = useState("");
   const [newEmail, setNewEmail] = useState("");
-  const [newPhone, setNewPhone] = useState("");
+  const [newWhatsapp, setNewWhatsapp] = useState("");
   const [newStatus, setNewStatus] = useState<ContactStatus>("Active");
   const [newTags] = useState<string[]>(["customer"]);
 
@@ -158,7 +173,8 @@ export const ContactsPage: React.FC = () => {
     return contacts.filter((c) => {
       const matchSearch =
         c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.email.toLowerCase().includes(searchQuery.toLowerCase());
+        c.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (c.whatsapp && c.whatsapp.includes(searchQuery));
       const matchTag = selectedTag === "All" ? true : c.tags.includes(selectedTag);
       return matchSearch && matchTag;
     });
@@ -206,12 +222,17 @@ export const ContactsPage: React.FC = () => {
       id: `ct-${Date.now()}`,
       name: newName.trim(),
       email: newEmail.trim(),
-      phone: newPhone.trim() || "+62 812-0000-0000",
+      whatsapp: newWhatsapp.trim() || undefined,
+      consent: {
+        email: true,
+        telegram: false,
+        whatsapp: Boolean(newWhatsapp.trim()),
+      },
       status: newStatus,
       joinedDate: "Hari ini",
       tags: newTags.length > 0 ? newTags : ["customer"],
-      initialsBg: "bg-indigo-100",
-      initialsColor: "text-indigo-700",
+      initialsBg: "bg-sky-100",
+      initialsColor: "text-sky-700",
     };
 
     setContacts((prev) => [created, ...prev]);
@@ -219,7 +240,7 @@ export const ContactsPage: React.FC = () => {
     setShowAddModal(false);
     setNewName("");
     setNewEmail("");
-    setNewPhone("");
+    setNewWhatsapp("");
   };
 
   // Bulk Delete Handler
@@ -235,9 +256,9 @@ export const ContactsPage: React.FC = () => {
       {/* 1. TOP HEADER & PRIMARY ACTIONS */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Contacts</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Kontak</h1>
           <p className="text-xs text-slate-500 mt-1">
-            {contacts.length} total contacts
+            {contacts.length} total kontak
           </p>
         </div>
 
@@ -256,10 +277,10 @@ export const ContactsPage: React.FC = () => {
           <button
             type="button"
             onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm shadow-indigo-200 transition cursor-pointer active:scale-95"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-white text-xs font-semibold shadow-xs transition cursor-pointer active:scale-95"
           >
-            <Plus className="h-3.5 w-3.5" />
-            <span>Add Contact</span>
+            <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
+            <span>Tambah Kontak</span>
           </button>
         </div>
       </div>
@@ -271,10 +292,10 @@ export const ContactsPage: React.FC = () => {
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <input
             type="text"
-            placeholder="Search by name or email..."
+            placeholder="Cari nama atau email..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-10 pl-10 pr-4 rounded-xl bg-slate-50/60 border border-transparent focus:border-indigo-400 focus:bg-white text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none transition"
+            className="w-full h-10 pl-10 pr-4 rounded-xl bg-slate-50/70 border border-transparent focus:border-sky-400 focus:bg-white text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none transition"
           />
           {searchQuery && (
             <button
@@ -298,7 +319,7 @@ export const ContactsPage: React.FC = () => {
                 onClick={() => setSelectedTag(tag)}
                 className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
                   isSelected
-                    ? "bg-indigo-600 text-white shadow-2xs"
+                    ? "bg-[#0284c7] text-white shadow-2xs"
                     : "bg-slate-100 hover:bg-slate-200/80 text-slate-600"
                 }`}
               >
@@ -320,14 +341,14 @@ export const ContactsPage: React.FC = () => {
                     type="checkbox"
                     checked={allVisibleSelected}
                     onChange={handleToggleSelectAll}
-                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                    className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500 cursor-pointer"
                   />
                 </th>
-                <th className="py-3.5 px-4 font-bold text-slate-500">Name</th>
-                <th className="py-3.5 px-4 font-bold text-slate-500">Email</th>
-                <th className="py-3.5 px-4 font-bold text-slate-500">Status</th>
-                <th className="py-3.5 px-4 font-bold text-slate-500">Joined</th>
-                <th className="py-3.5 pr-5 pl-4 text-right font-bold text-slate-500"></th>
+                <th className="py-3.5 px-4 font-bold text-slate-500 whitespace-nowrap min-w-[200px]">NAMA</th>
+                <th className="py-3.5 px-4 font-bold text-slate-500 whitespace-nowrap min-w-[220px]">EMAIL</th>
+                <th className="py-3.5 px-4 font-bold text-slate-500 whitespace-nowrap min-w-[180px]">NO. WHATSAPP</th>
+                <th className="py-3.5 px-4 font-bold text-slate-500 whitespace-nowrap min-w-[210px]">CONSENT CHANNEL</th>
+                <th className="py-3.5 px-4 font-bold text-slate-500 whitespace-nowrap min-w-[120px]">STATUS</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs">
@@ -346,28 +367,32 @@ export const ContactsPage: React.FC = () => {
                   return (
                     <tr
                       key={contact.id}
-                      className={`hover:bg-slate-50/80 transition-colors ${
-                        isChecked ? "bg-indigo-50/30" : ""
+                      onClick={() => setActiveContactDetail(contact)}
+                      className={`hover:bg-slate-50/80 transition-colors cursor-pointer ${
+                        isChecked ? "bg-sky-50/30" : ""
                       }`}
                     >
                       {/* Checkbox */}
-                      <td className="py-3.5 pl-5 pr-3">
+                      <td
+                        className="py-4 pl-5 pr-3 whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <input
                           type="checkbox"
                           checked={isChecked}
                           onChange={() => handleToggleSelectRow(contact.id)}
-                          className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                          className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500 cursor-pointer"
                         />
                       </td>
 
-                      {/* Name + Initials */}
-                      <td className="py-3.5 px-4">
+                      {/* 1. NAMA */}
+                      <td className="py-4 px-4 whitespace-nowrap">
                         <div className="flex items-center gap-3">
                           <div
                             className={`h-8 w-8 rounded-full ${
-                              contact.initialsBg || "bg-indigo-100"
+                              contact.initialsBg || "bg-sky-100"
                             } ${
-                              contact.initialsColor || "text-indigo-700"
+                              contact.initialsColor || "text-sky-700"
                             } font-bold text-xs flex items-center justify-center flex-shrink-0 shadow-2xs`}
                           >
                             {getInitials(contact.name)}
@@ -376,22 +401,73 @@ export const ContactsPage: React.FC = () => {
                             <span className="font-bold text-slate-900 block leading-tight">
                               {contact.name}
                             </span>
-                            {contact.phone && (
-                              <span className="text-[11px] text-slate-400 block mt-0.5">
-                                {contact.phone}
-                              </span>
-                            )}
                           </div>
                         </div>
                       </td>
 
-                      {/* Email */}
-                      <td className="py-3.5 px-4 text-slate-600 font-normal">
+                      {/* 2. EMAIL */}
+                      <td className="py-4 px-4 text-slate-600 font-normal whitespace-nowrap">
                         {contact.email}
                       </td>
 
-                      {/* Status */}
-                      <td className="py-3.5 px-4">
+                      {/* 3. NO. WHATSAPP */}
+                      <td className="py-4 px-4 font-normal whitespace-nowrap">
+                        {contact.whatsapp ? (
+                          <div className="inline-flex items-center gap-2 text-slate-700 font-medium whitespace-nowrap">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 flex-shrink-0" />
+                            <span className="whitespace-nowrap">{contact.whatsapp}</span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 font-medium">—</span>
+                        )}
+                      </td>
+
+                      {/* 4. CONSENT CHANNEL */}
+                      <td className="py-4 px-4 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5 whitespace-nowrap">
+                          {/* Email Consent Pill */}
+                          {contact.consent.email ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] font-bold whitespace-nowrap">
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 flex-shrink-0" />
+                              opt-in
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 border border-slate-200 text-[10px] font-bold whitespace-nowrap">
+                              <span className="h-1.5 w-1.5 rounded-full bg-slate-400 flex-shrink-0" />
+                              opt-out
+                            </span>
+                          )}
+
+                          {/* Telegram Consent Pill */}
+                          {contact.consent.telegram ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-100 text-sky-700 text-[10px] font-bold whitespace-nowrap">
+                              <span className="h-1.5 w-1.5 rounded-full bg-sky-500 flex-shrink-0" />
+                              TG
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-400 text-[10px] font-bold whitespace-nowrap">
+                              <span className="h-1.5 w-1.5 rounded-full bg-slate-300 flex-shrink-0" />
+                              TG
+                            </span>
+                          )}
+
+                          {/* WhatsApp Consent Pill */}
+                          {contact.consent.whatsapp ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-bold shadow-2xs whitespace-nowrap">
+                              <span className="h-1.5 w-1.5 rounded-full bg-white flex-shrink-0" />
+                              WA
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-400 text-[10px] font-bold whitespace-nowrap">
+                              <span className="h-1.5 w-1.5 rounded-full bg-slate-300 flex-shrink-0" />
+                              WA
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* 5. STATUS */}
+                      <td className="py-4 px-4 whitespace-nowrap">
                         {contact.status === "Active" && (
                           <span className="font-semibold text-emerald-600">Active</span>
                         )}
@@ -401,22 +477,6 @@ export const ContactsPage: React.FC = () => {
                         {contact.status === "Bounced" && (
                           <span className="font-semibold text-rose-600">Bounced</span>
                         )}
-                      </td>
-
-                      {/* Joined Date */}
-                      <td className="py-3.5 px-4 text-slate-500 font-normal">
-                        {contact.joinedDate}
-                      </td>
-
-                      {/* Action */}
-                      <td className="py-3.5 pr-5 pl-4 text-right">
-                        <button
-                          type="button"
-                          onClick={() => setActiveContactDetail(contact)}
-                          className="text-indigo-600 hover:text-indigo-800 font-semibold text-xs cursor-pointer hover:underline"
-                        >
-                          View
-                        </button>
                       </td>
                     </tr>
                   );
@@ -472,7 +532,7 @@ export const ContactsPage: React.FC = () => {
                 placeholder="Contoh: Budi Santoso"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                className="w-full h-10 px-3.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
+                className="w-full h-10 px-3.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-sky-500"
               />
             </div>
 
@@ -484,18 +544,18 @@ export const ContactsPage: React.FC = () => {
                 placeholder="budi@startup.id"
                 value={newEmail}
                 onChange={(e) => setNewEmail(e.target.value)}
-                className="w-full h-10 px-3.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
+                className="w-full h-10 px-3.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-sky-500"
               />
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700">Nomor Telepon (WhatsApp)</label>
+              <label className="text-xs font-semibold text-slate-700">Nomor WhatsApp</label>
               <input
                 type="tel"
                 placeholder="+62 812-3456-7890"
-                value={newPhone}
-                onChange={(e) => setNewPhone(e.target.value)}
-                className="w-full h-10 px-3.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
+                value={newWhatsapp}
+                onChange={(e) => setNewWhatsapp(e.target.value)}
+                className="w-full h-10 px-3.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-sky-500"
               />
             </div>
 
@@ -504,7 +564,7 @@ export const ContactsPage: React.FC = () => {
               <select
                 value={newStatus}
                 onChange={(e) => setNewStatus(e.target.value as ContactStatus)}
-                className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
+                className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-sky-500"
               >
                 <option value="Active">Active (Aktif)</option>
                 <option value="Unsubscribed">Unsubscribed (Berhenti)</option>
@@ -522,7 +582,7 @@ export const ContactsPage: React.FC = () => {
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-xs font-semibold text-white shadow-sm transition cursor-pointer"
+                className="px-4 py-2 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-xs font-semibold text-white shadow-sm transition cursor-pointer"
               >
                 Simpan Kontak
               </button>
@@ -544,8 +604,8 @@ export const ContactsPage: React.FC = () => {
           </DialogHeader>
 
           <div className="space-y-4 pt-2">
-            <div className="border-2 border-dashed border-slate-200 hover:border-indigo-400 rounded-2xl p-6 text-center bg-slate-50/50 hover:bg-indigo-50/20 transition cursor-pointer">
-              <Upload className="h-8 w-8 text-indigo-500 mx-auto mb-2" />
+            <div className="border-2 border-dashed border-slate-200 hover:border-sky-400 rounded-2xl p-6 text-center bg-slate-50/50 hover:bg-sky-50/20 transition cursor-pointer">
+              <Upload className="h-8 w-8 text-sky-500 mx-auto mb-2" />
               <p className="text-xs font-bold text-slate-800">
                 Klik untuk memilih file atau seret file ke sini
               </p>
@@ -562,7 +622,7 @@ export const ContactsPage: React.FC = () => {
                   e.preventDefault();
                   toast.info("Template CSV sedang diunduh...");
                 }}
-                className="font-bold text-indigo-600 hover:underline flex items-center gap-1"
+                className="font-bold text-sky-600 hover:underline flex items-center gap-1"
               >
                 <Download className="h-3 w-3" /> Unduh Template
               </a>
@@ -582,7 +642,7 @@ export const ContactsPage: React.FC = () => {
                   toast.success("8 kontak berhasil diimpor dari file sample.");
                   setShowImportModal(false);
                 }}
-                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-xs font-semibold text-white shadow-sm transition cursor-pointer"
+                className="px-4 py-2 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-xs font-semibold text-white shadow-sm transition cursor-pointer"
               >
                 Mulai Import
               </button>
@@ -600,9 +660,9 @@ export const ContactsPage: React.FC = () => {
                 <div className="flex items-center gap-3 pb-2">
                   <div
                     className={`h-12 w-12 rounded-full ${
-                      activeContactDetail.initialsBg || "bg-indigo-100"
+                      activeContactDetail.initialsBg || "bg-sky-100"
                     } ${
-                      activeContactDetail.initialsColor || "text-indigo-700"
+                      activeContactDetail.initialsColor || "text-sky-700"
                     } font-bold text-base flex items-center justify-center shadow-xs`}
                   >
                     {getInitials(activeContactDetail.name)}
@@ -639,29 +699,47 @@ export const ContactsPage: React.FC = () => {
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Telepon (WhatsApp):</span>
-                  <span className="font-semibold text-slate-800">{activeContactDetail.phone || "-"}</span>
+                  <span className="text-slate-400">WhatsApp:</span>
+                  <span className="font-semibold text-slate-800">{activeContactDetail.whatsapp || "—"}</span>
                 </div>
               </div>
 
               {/* Channel Consents */}
               <div className="space-y-2">
-                <span className="text-xs font-bold text-slate-900 block">Saluran Izin Pengiriman</span>
+                <span className="text-xs font-bold text-slate-900 block">Saluran Izin Pengiriman (Consent)</span>
                 <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                  <div className="p-2.5 rounded-xl border border-emerald-100 bg-emerald-50/50">
-                    <Mail className="h-4 w-4 text-emerald-600 mx-auto mb-1" />
-                    <span className="font-bold text-[11px] text-emerald-800 block">Email</span>
-                    <span className="text-[10px] text-emerald-600">Opted-in</span>
+                  <div className={`p-2.5 rounded-xl border ${
+                    activeContactDetail.consent.email
+                      ? "border-emerald-100 bg-emerald-50/60"
+                      : "border-slate-200 bg-slate-50"
+                  }`}>
+                    <Mail className={`h-4 w-4 mx-auto mb-1 ${activeContactDetail.consent.email ? "text-emerald-600" : "text-slate-400"}`} />
+                    <span className="font-bold text-[11px] block">Email</span>
+                    <span className={`text-[10px] ${activeContactDetail.consent.email ? "text-emerald-600" : "text-slate-400"}`}>
+                      {activeContactDetail.consent.email ? "Opt-in" : "Opt-out"}
+                    </span>
                   </div>
-                  <div className="p-2.5 rounded-xl border border-emerald-100 bg-emerald-50/50">
-                    <MessageSquare className="h-4 w-4 text-emerald-600 mx-auto mb-1" />
-                    <span className="font-bold text-[11px] text-emerald-800 block">WhatsApp</span>
-                    <span className="text-[10px] text-emerald-600">Opted-in</span>
+                  <div className={`p-2.5 rounded-xl border ${
+                    activeContactDetail.consent.whatsapp
+                      ? "border-emerald-100 bg-emerald-50/60"
+                      : "border-slate-200 bg-slate-50"
+                  }`}>
+                    <MessageSquare className={`h-4 w-4 mx-auto mb-1 ${activeContactDetail.consent.whatsapp ? "text-emerald-600" : "text-slate-400"}`} />
+                    <span className="font-bold text-[11px] block">WhatsApp</span>
+                    <span className={`text-[10px] ${activeContactDetail.consent.whatsapp ? "text-emerald-600" : "text-slate-400"}`}>
+                      {activeContactDetail.consent.whatsapp ? "Aktif" : "Non-aktif"}
+                    </span>
                   </div>
-                  <div className="p-2.5 rounded-xl border border-sky-100 bg-sky-50/50">
-                    <Send className="h-4 w-4 text-sky-600 mx-auto mb-1" />
-                    <span className="font-bold text-[11px] text-sky-800 block">Telegram</span>
-                    <span className="text-[10px] text-sky-600">Terkoneksi</span>
+                  <div className={`p-2.5 rounded-xl border ${
+                    activeContactDetail.consent.telegram
+                      ? "border-sky-100 bg-sky-50/60"
+                      : "border-slate-200 bg-slate-50"
+                  }`}>
+                    <Send className={`h-4 w-4 mx-auto mb-1 ${activeContactDetail.consent.telegram ? "text-sky-600" : "text-slate-400"}`} />
+                    <span className="font-bold text-[11px] block">Telegram</span>
+                    <span className={`text-[10px] ${activeContactDetail.consent.telegram ? "text-sky-600" : "text-slate-400"}`}>
+                      {activeContactDetail.consent.telegram ? "Terkoneksi" : "Non-aktif"}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -673,32 +751,11 @@ export const ContactsPage: React.FC = () => {
                   {activeContactDetail.tags.map((t) => (
                     <span
                       key={t}
-                      className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-100 font-bold text-xs"
+                      className="px-2.5 py-1 rounded-lg bg-sky-50 text-sky-700 border border-sky-100 font-bold text-xs"
                     >
                       #{t}
                     </span>
                   ))}
-                </div>
-              </div>
-
-              {/* Recent Activity */}
-              <div className="space-y-2">
-                <span className="text-xs font-bold text-slate-900 block">Riwayat Interaksi Kampanye</span>
-                <div className="space-y-2 text-xs text-slate-600">
-                  <div className="p-3 rounded-xl border border-slate-100 bg-white space-y-1 shadow-2xs">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-slate-800">Flash Sale Alert 9.9</span>
-                      <span className="text-[10px] text-emerald-600 font-semibold">Dibuka</span>
-                    </div>
-                    <span className="text-[10px] text-slate-400 block">WhatsApp • 22 Sep 2026, 10:14 WIB</span>
-                  </div>
-                  <div className="p-3 rounded-xl border border-slate-100 bg-white space-y-1 shadow-2xs">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-slate-800">Product Launch Announcement</span>
-                      <span className="text-[10px] text-sky-600 font-semibold">Terkirim</span>
-                    </div>
-                    <span className="text-[10px] text-slate-400 block">Email • 18 Sep 2026, 09:30 WIB</span>
-                  </div>
                 </div>
               </div>
 

@@ -9,6 +9,10 @@ import { DashboardPage } from "@/pages/dashboard/DashboardPage";
 import { CampaignsPage } from "@/pages/campaigns/CampaignsPage";
 import { NewCampaignPage } from "@/pages/campaigns/NewCampaignPage";
 import { ContactsPage } from "@/pages/contacts/ContactsPage";
+import { TemplatesPage } from "@/pages/templates/TemplatesPage";
+import { ChannelsPage } from "@/pages/channels/ChannelsPage";
+import { UsersRolesPage } from "@/pages/users/UsersRolesPage";
+import { AccountSettingsPage } from "@/pages/account/AccountSettingsPage";
 import { Toaster } from "@/components/ui/sonner";
 import { LandingPage } from "@/pages/landing/LandingPage";
 
@@ -35,39 +39,10 @@ export default function App() {
             <Route path="/campaigns" element={<CampaignsPage />} />
             <Route path="/campaigns/new" element={<NewCampaignPage />} />
             <Route path="/contacts" element={<ContactsPage />} />
-            <Route
-              path="/templates"
-              element={
-                <div className="p-8 text-center border-2 border-dashed rounded-xl bg-card">
-                  <h3 className="text-lg font-bold">Modul Templates</h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Rich text HTML/Markdown dan merge tags dinamis
-                  </p>
-                </div>
-              }
-            />
-            <Route
-              path="/channels"
-              element={
-                <div className="p-8 text-center border-2 border-dashed rounded-xl bg-card">
-                  <h3 className="text-lg font-bold">Modul Channel Settings</h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Pengaturan SMTP Organisasi & Telegram Bot Token pribadi
-                  </p>
-                </div>
-              }
-            />
-            <Route
-              path="/users"
-              element={
-                <div className="p-8 text-center border-2 border-dashed rounded-xl bg-card">
-                  <h3 className="text-lg font-bold">Modul Users & Role Management</h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    RBAC (Admin, Manager, Editor, Viewer) & Audit Logs
-                  </p>
-                </div>
-              }
-            />
+            <Route path="/templates" element={<TemplatesPage />} />
+            <Route path="/channels" element={<ChannelsPage />} />
+            <Route path="/users" element={<UsersRolesPage />} />
+            <Route path="/account" element={<AccountSettingsPage />} />
           </Route>
 
           {/* Fallback jika route tidak ditemukan */}

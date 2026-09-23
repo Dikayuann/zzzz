@@ -15,9 +15,6 @@ setupSwagger(app);
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/users', userRoutes);
 app.use(errorHandler);
-// app.listen(3000, () => {
-//     console.log('Server is running on port 3000');
-// })
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`🚀 Server berjalan di http://localhost:${PORT}`);

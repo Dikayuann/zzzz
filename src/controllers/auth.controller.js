@@ -1,5 +1,5 @@
-import { registerSchema, verifiyEmailSchema, loginSchema, refreshTokenSchema, forgotPasswordSchema, resetPasswordSchema, changePasswordSchema, } from "../schemas/auth.schema";
-import { registerUser, verifyEmail, loginUser, refreshAccessToken, logoutUser, forgotPassword, resetPassword, changePassword, } from "../services/auth.service";
+import { registerSchema, verifiyEmailSchema, loginSchema, refreshTokenSchema, forgotPasswordSchema, resetPasswordSchema, changePasswordSchema, resendVerificationSchema, } from "../schemas/auth.schema";
+import { registerUser, verifyEmail, resendVerificationEmail, loginUser, refreshAccessToken, logoutUser, forgotPassword, resetPassword, changePassword, } from "../services/auth.service";
 export const registerController = async (req, res) => {
     const result = registerSchema.safeParse(req.body);
     if (!result.success) {
@@ -40,6 +40,22 @@ export const verifyEmailController = async (req, res) => {
             return res.status(400).json({ message: "Token verifikasi tidak valid atau sudah kadaluarsa" });
         }
         return res.status(500).json({ message: "Terjadi kesalahan internal" });
+    }
+};
+export const resendVerificationController = async (req, res) => {
+    const result = resendVerificationSchema.safeParse(req.body);
+    if (!result.success) {
+        return res.status(400).json({
+            message: "Email tidak valid",
+            errors: result.error.issues.map((issue) => issue.message),
+        });
+    }
+    try {
+        const response = await resendVerificationEmail(result.data.email);
+        return res.status(200).json(response);
+    }
+    catch (error) {
+        return res.status(500).json({ message: "Gagal mengirim ulang email verifikasi" });
     }
 };
 export const loginController = async (req, res) => {

@@ -40,3 +40,7 @@ export const changePasswordSchema = z.object({
     currentPassword: z.string().min(1, "Password saat ini wajib diisi"),
     newPassword: passwordValidation,
 });
+// resend verification schema
+export const resendVerificationSchema = z.object({
+    email: z.string().email("Format email tidak valid"),
+});
