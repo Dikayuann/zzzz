@@ -32,7 +32,7 @@ export const TemplatesPage: React.FC = () => {
 
   // Mailchimp Component Blocks state
   const [brandColor, setBrandColor] = useState("#4F46E5");
-  const [enableCta, setEnableCta] = useState(true);
+  const [enableCta, setEnableCta] = useState(false);
   const [ctaText, setCtaText] = useState("Klaim Voucher Sekarang 🚀");
   const [ctaUrl, setCtaUrl] = useState("https://tokoonline.com/promo");
   const [ctaColor, setCtaColor] = useState("#4F46E5");

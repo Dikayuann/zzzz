@@ -33,11 +33,10 @@ import {
   Bookmark,
   CheckCheck,
   Trash2,
-  Palette,
   Code2,
-  ChevronUp,
   Edit3,
   ShieldCheck,
+  Palette,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -55,7 +54,6 @@ import {
 import { toast } from "sonner";
 import { RichCampaignEditor } from "@/components/campaigns/RichCampaignEditor";
 import { MergeTagsModal } from "@/components/campaigns/MergeTagsModal";
-import { EmailThemeSelector } from "@/components/campaigns/EmailThemeSelector";
 import { evaluateMergeTags } from "@/data/mergeTags";
 import { getEmailTheme } from "@/data/emailThemes";
 
@@ -265,18 +263,16 @@ export const NewCampaignPage: React.FC = () => {
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
   const [showMergeModal, setShowMergeModal] = useState(false);
-  const [showEmailDesignSettings, setShowEmailDesignSettings] = useState(true);
-  const [showThemeSelector, setShowThemeSelector] = useState(false);
 
-  // Kustomisasi Tampilan & Desain Email
-  const [emailBrandName, setEmailBrandName] = useState<string>(() => initialDraft?.emailBrandName ?? "ACME CORP");
-  const [emailHeaderStyle] = useState<"clean" | "banner" | "minimal">(() => initialDraft?.emailHeaderStyle ?? "clean");
-  const [emailCtaEnabled, setEmailCtaEnabled] = useState<boolean>(() => initialDraft?.emailCtaEnabled ?? true);
-  const [emailCtaText, setEmailCtaText] = useState<string>(() => initialDraft?.emailCtaText ?? "Klaim Penawaran Spesial ➔");
-  const [emailCtaUrl, setEmailCtaUrl] = useState<string>(() => initialDraft?.emailCtaUrl ?? "https://acmecorp.co/promo");
-  const [emailCtaColor, setEmailCtaColor] = useState<string>(() => initialDraft?.emailCtaColor ?? "indigo");
+  // Kustomisasi Tampilan & Desain Email (Defaults)
+  const emailBrandName = initialDraft?.emailBrandName ?? "ACME CORP";
+  const emailHeaderStyle = initialDraft?.emailHeaderStyle ?? "clean";
+  const emailCtaEnabled = initialDraft?.emailCtaEnabled ?? false;
+  const emailCtaText = initialDraft?.emailCtaText ?? "Klaim Penawaran Spesial ➔";
+  const emailCtaUrl = initialDraft?.emailCtaUrl ?? "https://acmecorp.co/promo";
+  const emailCtaColor = initialDraft?.emailCtaColor ?? "indigo";
   const [emailEditorMode, setEmailEditorMode] = useState<"visual" | "html">(() => initialDraft?.emailEditorMode ?? "visual");
-  const [emailThemeId, setEmailThemeId] = useState<string>(() => initialDraft?.emailThemeId ?? "plain");
+  const emailThemeId = initialDraft?.emailThemeId ?? "plain";
   const [reviewChannelTab, setReviewChannelTab] = useState<DeliveryChannel>(() => initialDraft?.selectedChannels?.[0] || "Email");
 
   const [hasRestoredDraft, setHasRestoredDraft] = useState<boolean>(() => {
@@ -1508,161 +1504,6 @@ export const NewCampaignPage: React.FC = () => {
                       }}
                     />
                   )}
-
-                  {/* Kustomisasi Tampilan Email Khusus (Layout Header, Brand Logo & CTA Button) */}
-                  {activeTemplateTab === "Email" && (
-                    <div className="rounded-2xl border border-indigo-100 bg-gradient-to-b from-indigo-50/40 via-white to-slate-50/30 p-4 space-y-3.5 shadow-2xs">
-                      {/* Theme Picker Quick Access */}
-                      {(() => {
-                        const activeTheme = getEmailTheme(emailThemeId);
-                        return (
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <div className="flex items-center gap-1">
-                                {activeTheme.swatches.map((s, i) => (
-                                  <span key={i} className="h-3.5 w-3.5 rounded-full border border-white shadow-2xs" style={{ background: s }} />
-                                ))}
-                              </div>
-                              <div>
-                                <span className="text-[11px] font-bold text-slate-800">
-                                  {activeTheme.emoji} {activeTheme.name}
-                                </span>
-                                <span className="ml-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-indigo-100 text-indigo-700">
-                                  {activeTheme.badge}
-                                </span>
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => setShowThemeSelector(true)}
-                              className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold shadow-sm transition cursor-pointer active:scale-95"
-                            >
-                              <Palette className="h-3 w-3" />
-                              Ganti Tema
-                            </button>
-                          </div>
-                        );
-                      })()}
-                      <div className="border-t border-indigo-100/70 pt-3" />
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <div className="h-6 w-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center">
-                            <Palette className="h-3.5 w-3.5" />
-                          </div>
-                          <div>
-                            <h4 className="text-xs font-bold text-slate-900">
-                              Kustomisasi Tampilan Email & Tombol CTA
-                            </h4>
-                            <p className="text-[10px] text-slate-500">
-                              Sesuaikan gaya layout header dan tombol aksi di preview email
-                            </p>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setShowEmailDesignSettings((p) => !p)}
-                          className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 transition cursor-pointer"
-                        >
-                          {showEmailDesignSettings ? (
-                            <ChevronUp className="h-4 w-4" />
-                          ) : (
-                            <ChevronDown className="h-4 w-4" />
-                          )}
-                        </button>
-                      </div>
-
-                      {showEmailDesignSettings && (
-                        <div className="space-y-3 pt-2 border-t border-indigo-100/70 animate-in fade-in-50">
-                          {/* Nama Brand / Header Text */}
-                          <div className="space-y-1">
-                            <label className="text-[11px] font-semibold text-slate-700">
-                              Nama Brand / Teks Logo
-                            </label>
-                            <input
-                              type="text"
-                              value={emailBrandName}
-                              onChange={(e) => setEmailBrandName(e.target.value)}
-                              placeholder="ACME CORP"
-                              className="w-full h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 focus:outline-none focus:border-indigo-500 shadow-2xs"
-                            />
-                          </div>
-
-                          {/* 3. Tombol Aksi Utama (CTA Button) */}
-                          <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2.5">
-                            <div className="flex items-center justify-between">
-                              <label className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={emailCtaEnabled}
-                                  onChange={(e) => setEmailCtaEnabled(e.target.checked)}
-                                  className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5"
-                                />
-                                Sertakan Tombol Aksi (CTA Button)
-                              </label>
-                              <span className="text-[10px] text-indigo-600 font-semibold">
-                                {emailCtaEnabled ? "Aktif" : "Non-aktif"}
-                              </span>
-                            </div>
-
-                            {emailCtaEnabled && (
-                              <div className="space-y-2.5 pt-1">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                  <div className="space-y-1">
-                                    <span className="text-[10px] font-medium text-slate-500">Teks Tombol</span>
-                                    <input
-                                      type="text"
-                                      value={emailCtaText}
-                                      onChange={(e) => setEmailCtaText(e.target.value)}
-                                      placeholder="Klaim Penawaran Spesial ➔"
-                                      className="w-full h-8 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-xs text-slate-800 focus:bg-white focus:outline-none focus:border-indigo-500"
-                                    />
-                                  </div>
-                                  <div className="space-y-1">
-                                    <span className="text-[10px] font-medium text-slate-500">URL Tautan</span>
-                                    <input
-                                      type="text"
-                                      value={emailCtaUrl}
-                                      onChange={(e) => setEmailCtaUrl(e.target.value)}
-                                      placeholder="https://acmecorp.co/promo"
-                                      className="w-full h-8 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-xs text-slate-800 focus:bg-white focus:outline-none focus:border-indigo-500"
-                                    />
-                                  </div>
-                                </div>
-
-                                {/* Pilihan Warna Tombol */}
-                                <div className="space-y-1">
-                                  <span className="text-[10px] font-medium text-slate-500">Warna Tombol</span>
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    {[
-                                      { id: "indigo", name: "Indigo", bg: "bg-indigo-600" },
-                                      { id: "emerald", name: "Emerald", bg: "bg-emerald-600" },
-                                      { id: "rose", name: "Rose", bg: "bg-rose-600" },
-                                      { id: "amber", name: "Amber", bg: "bg-amber-600" },
-                                      { id: "dark", name: "Dark Slate", bg: "bg-slate-900" },
-                                    ].map((col) => (
-                                      <button
-                                        key={col.id}
-                                        type="button"
-                                        onClick={() => setEmailCtaColor(col.id)}
-                                        className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition cursor-pointer ${
-                                          emailCtaColor === col.id
-                                            ? "border-slate-800 bg-slate-100 shadow-2xs font-bold"
-                                            : "border-slate-200 bg-white hover:bg-slate-50 text-slate-600"
-                                        }`}
-                                      >
-                                        <span className={`h-2.5 w-2.5 rounded-full ${col.bg}`} />
-                                        <span>{col.name}</span>
-                                      </button>
-                                    ))}
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
                 </div>
               </div>
 
@@ -2765,18 +2606,6 @@ export const NewCampaignPage: React.FC = () => {
         onSelectTag={handleInsertTag}
       />
 
-      {/* 8. EMAIL THEME SELECTOR MODAL */}
-      {showThemeSelector && (
-        <EmailThemeSelector
-          selectedThemeId={emailThemeId}
-          onSelect={(id) => {
-            setEmailThemeId(id);
-            const theme = getEmailTheme(id);
-            toast.success(`Tema email "${theme.name}" diterapkan ke preview.`);
-          }}
-          onClose={() => setShowThemeSelector(false)}
-        />
-      )}
     </div>
   );
 };

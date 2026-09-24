@@ -18,7 +18,6 @@ import {
   Code2,
   Copy,
   Check,
-  MailCheck,
   ExternalLink,
   Globe,
   Camera,
@@ -26,6 +25,10 @@ import {
   MoreVertical,
   Phone,
   Video,
+  Star,
+  Reply,
+  Forward,
+  Lock,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -82,6 +85,8 @@ export const TemplateLivePreview: React.FC<TemplateLivePreviewProps> = ({
 }) => {
   const [previewMode, setPreviewMode] = useState<"visual" | "html">("visual");
   const [copiedHtml, setCopiedHtml] = useState(false);
+  const [showToMeDetails, setShowToMeDetails] = useState(false);
+  const [isStarred, setIsStarred] = useState(false);
 
   // Interpolated values
   const compiledSubject = interpolateMergeTags(subject, recipient, orgName);
@@ -299,101 +304,266 @@ export const TemplateLivePreview: React.FC<TemplateLivePreviewProps> = ({
         )}
       </div>
 
-      {/* CHANNEL 1: EMAIL PREVIEW */}
+      {/* CHANNEL 1: EMAIL PREVIEW (AUTHENTIC GOOGLE MAIL PREVIEW) */}
       {channel === "email" && (
         previewMode === "visual" ? (
-          <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-2xs space-y-4">
-            {/* Email Envelope Metadata */}
-            <div className="space-y-1 text-xs pb-4 border-b border-slate-100">
-              <p className="text-slate-500">
-                <span className="text-slate-400 font-medium">From:</span>{" "}
-                <span className="font-semibold text-slate-800">{orgName}</span>{" "}
-                <span className="text-slate-400">&lt;{senderEmail}&gt;</span>
-              </p>
-              <p className="text-slate-800 font-medium pt-0.5">
-                <span className="text-slate-400 font-medium">Subject:</span>{" "}
-                <span className="font-semibold text-slate-900">
-                  {compiledSubject || "(Tanpa Subjek)"}
+          <div className="rounded-2xl border border-slate-200/90 bg-white shadow-2xs overflow-hidden">
+            {/* 1. GMAIL TOP BAR */}
+            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 bg-[#f8fafc]/70">
+              <div className="flex items-center gap-2.5">
+                {/* Gmail Logo Icon */}
+                <div className="h-6 w-6 rounded-lg bg-white shadow-2xs border border-slate-200/80 flex items-center justify-center p-0.5 shrink-0">
+                  <svg viewBox="0 0 24 24" className="h-4 w-4">
+                    <path fill="#4285F4" d="M2 6v12a2 2 0 0 0 2 2h2V9.5L2 6z"/>
+                    <path fill="#34A853" d="M18 20h2a2 2 0 0 0 2-2V6l-4 3.5V20z"/>
+                    <path fill="#EA4335" d="M18 6l-6 4.5L6 6V4a2 2 0 0 1 3.2-1.6L12 4.5l2.8-2.1A2 2 0 0 1 18 4v2z"/>
+                    <path fill="#FBBC04" d="M6 9.5V20h12V9.5L12 14 6 9.5z"/>
+                  </svg>
+                </div>
+                <span className="text-xs font-bold text-slate-800 tracking-tight">
+                  Google Mail Preview
                 </span>
-              </p>
+                <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-semibold text-[10px] border border-slate-200/70">
+                  Inbox
+                </span>
+              </div>
+
+              {/* Top Right Action Icons */}
+              <div className="flex items-center gap-1 text-slate-400">
+                <button
+                  type="button"
+                  onClick={() => setIsStarred(!isStarred)}
+                  className="p-1.5 hover:bg-slate-100 rounded-lg transition cursor-pointer"
+                  title="Bintang"
+                >
+                  <Star
+                    className={`h-4 w-4 ${
+                      isStarred ? "text-amber-400 fill-amber-400" : "hover:text-slate-600"
+                    }`}
+                  />
+                </button>
+                <button
+                  type="button"
+                  className="p-1.5 hover:bg-slate-100 rounded-lg transition cursor-pointer hover:text-slate-600"
+                  title="Balas"
+                >
+                  <Reply className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  className="p-1.5 hover:bg-slate-100 rounded-lg transition cursor-pointer hover:text-slate-600"
+                  title="Lainnya"
+                >
+                  <MoreVertical className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* 2. SUBJECT LINE */}
+            <div className="px-6 pt-5 pb-2">
+              <div className="flex items-baseline justify-between gap-4">
+                <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight leading-snug">
+                  {compiledSubject ? compiledSubject : "(Subject Line Empty)"}
+                </h1>
+                <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold shrink-0">
+                  Email HTML
+                </span>
+              </div>
               {compiledPreheader && (
-                <p className="text-[11px] text-slate-400 truncate">
-                  <span className="font-medium text-slate-400">Preheader:</span>{" "}
+                <p className="text-xs text-slate-400 mt-1 line-clamp-1">
                   {compiledPreheader}
                 </p>
               )}
             </div>
 
-            {/* Email Body */}
-            <div className="space-y-4">
-              {/* Brand Logo Bar */}
-              <div>
-                <span
-                  style={{ backgroundColor: brandColor }}
-                  className="inline-block text-white text-[10px] font-extrabold px-3 py-1 rounded-md tracking-wider uppercase shadow-2xs"
+            {/* 3. SENDER ROW (EXACT GMAIL DESIGN) */}
+            <div className="px-6 py-3 flex items-start justify-between gap-3 border-b border-slate-100">
+              <div className="flex items-start gap-3">
+                {/* Sender Avatar Circle */}
+                <div
+                  style={{ backgroundColor: brandColor || "#4F46E5" }}
+                  className="h-10 w-10 rounded-full text-white flex items-center justify-center font-bold text-sm shadow-xs shrink-0"
                 >
-                  {orgName.toUpperCase()}
-                </span>
-              </div>
-
-              {/* Formatted Content */}
-              <div className="space-y-1 font-sans text-xs text-slate-700">
-                {renderFormattedBlocks(compiledContent)}
-              </div>
-
-              {/* Mailchimp Call-to-Action (CTA) Button */}
-              {enableCta && (
-                <div className="pt-4 pb-2 text-center">
-                  <a
-                    href={ctaUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ backgroundColor: ctaColor }}
-                    className="inline-flex items-center gap-1.5 px-6 py-2.5 rounded-full text-white text-xs font-bold shadow-md hover:opacity-95 transition cursor-pointer"
-                  >
-                    <span>{ctaText}</span>
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
+                  {orgName ? orgName.charAt(0).toUpperCase() : "A"}
                 </div>
-              )}
 
-              {/* Mailchimp Social Links & Compliance Footer */}
-              <div className="mt-6 pt-5 border-t border-slate-100 text-center space-y-2 text-xs">
-                {enableSocial && (
-                  <div className="flex items-center justify-center gap-4 text-slate-500 py-1">
-                    {websiteUrl && (
-                      <a href={websiteUrl} target="_blank" rel="noreferrer" className="hover:text-indigo-600 transition flex items-center gap-1 text-[11px] font-medium">
-                        <Globe className="h-3.5 w-3.5" /> Web
-                      </a>
-                    )}
-                    {instagramUrl && (
-                      <a href={instagramUrl} target="_blank" rel="noreferrer" className="hover:text-rose-600 transition flex items-center gap-1 text-[11px] font-medium">
-                        <Camera className="h-3.5 w-3.5" /> Instagram
-                      </a>
-                    )}
-                    {whatsappUrl && (
-                      <a href={whatsappUrl} target="_blank" rel="noreferrer" className="hover:text-emerald-600 transition flex items-center gap-1 text-[11px] font-medium">
-                        <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
-                      </a>
+                <div>
+                  <div className="flex flex-wrap items-baseline gap-x-2">
+                    <span className="font-bold text-sm text-slate-900 leading-tight">
+                      {orgName ? `${orgName} Promo & Marketing` : "Acme Promo & Marketing"}
+                    </span>
+                    <span className="text-xs text-slate-500 font-normal">
+                      &lt;{senderEmail || "promo@acmecorp.co"}&gt;
+                    </span>
+                  </div>
+
+                  {/* Dropdown 'to me ▾' */}
+                  <div className="relative mt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setShowToMeDetails(!showToMeDetails)}
+                      className="inline-flex items-center gap-0.5 text-xs text-slate-500 hover:text-slate-800 transition cursor-pointer select-none"
+                    >
+                      <span>to me</span>
+                      <ChevronDown className="h-3 w-3 text-slate-400" />
+                    </button>
+
+                    {/* Gmail Metadata Details Popover */}
+                    {showToMeDetails && (
+                      <div className="absolute left-0 top-full mt-1.5 z-20 w-80 rounded-2xl bg-white border border-slate-200 shadow-xl p-3.5 text-xs space-y-1.5 animate-in fade-in zoom-in-95 duration-100">
+                        <div className="grid grid-cols-4 gap-2 text-[11px]">
+                          <span className="text-slate-400 font-medium">from:</span>
+                          <span className="col-span-3 text-slate-800 font-semibold truncate">
+                            {orgName} &lt;{senderEmail}&gt;
+                          </span>
+
+                          <span className="text-slate-400 font-medium">to:</span>
+                          <span className="col-span-3 text-slate-800 truncate">
+                            {recipient.name} &lt;{recipient.email}&gt;
+                          </span>
+
+                          <span className="text-slate-400 font-medium">date:</span>
+                          <span className="col-span-3 text-slate-600">
+                            {new Date().toLocaleDateString("id-ID", {
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </span>
+
+                          <span className="text-slate-400 font-medium">subject:</span>
+                          <span className="col-span-3 text-slate-800 font-medium">
+                            {compiledSubject || "(Subject Line Empty)"}
+                          </span>
+
+                          <span className="text-slate-400 font-medium">security:</span>
+                          <span className="col-span-3 text-emerald-600 font-medium flex items-center gap-1">
+                            <Lock className="h-3 w-3" /> Standard encryption (TLS)
+                          </span>
+                        </div>
+                      </div>
                     )}
                   </div>
-                )}
+                </div>
+              </div>
 
-                <p className="text-[10px] text-slate-400">
-                  {footerAddress}
-                </p>
-                <p className="text-[10px] text-slate-400">
-                  Email dikirim oleh <strong>{orgName}</strong>. <a href="#unsubscribe" className="underline text-slate-500 hover:text-slate-800">Unsubscribe</a>.
-                </p>
+              {/* Timestamp on right */}
+              <div className="text-right shrink-0">
+                <span className="text-xs text-slate-400">
+                  11:42 AM (moments ago)
+                </span>
               </div>
             </div>
 
-            {/* Delivery Guarantee Notice */}
-            <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
-              <span className="flex items-center gap-1.5 text-emerald-600 font-medium">
-                <MailCheck className="h-3.5 w-3.5" /> Mailchimp-grade HTML Ready
-              </span>
-              <span>100% responsif</span>
+            {/* 4. EMAIL CONTENT CONTAINER (GMAIL CANVAS) */}
+            <div className="p-4 sm:p-6 bg-[#f8fafc]/60">
+              <div className="max-w-xl mx-auto rounded-2xl border border-slate-200/90 bg-white overflow-hidden shadow-2xs">
+                
+                {/* Brand Badge Header */}
+                <div className="pt-6 pb-4 text-center">
+                  <span className="inline-block px-4 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs font-extrabold text-slate-800 tracking-wider uppercase shadow-2xs">
+                    {orgName || "ACME CORP"}
+                  </span>
+                  <p className="text-[11px] text-slate-400 mt-1 font-medium">
+                    Official Communication
+                  </p>
+                </div>
+
+                {/* Hero Banner (As seen in user's screenshot) */}
+                <div
+                  style={{ backgroundColor: brandColor || "#2563EB" }}
+                  className="mx-4 sm:mx-6 rounded-2xl py-8 px-6 text-center text-white shadow-xs transition-colors"
+                >
+                  <h2 className="text-2xl font-bold tracking-tight text-white mb-1">
+                    {orgName ? orgName : "Nama Brand"}
+                  </h2>
+                  <p className="text-sm text-white/90 font-medium">
+                    Solusi terbaik untuk kebutuhan Anda
+                  </p>
+                </div>
+
+                {/* Email Body Content */}
+                <div className="p-6 sm:p-8 space-y-4">
+                  {/* Recipient Greeting */}
+                  <h3 className="text-xl sm:text-2xl font-bold text-slate-900">
+                    Halo, {recipient.name}!
+                  </h3>
+
+                  {/* Dynamic Parsed Content */}
+                  <div className="space-y-2 text-slate-700 text-xs sm:text-sm leading-relaxed">
+                    {renderFormattedBlocks(compiledContent)}
+                  </div>
+
+                  {/* Mailchimp Call-to-Action (CTA) Button */}
+                  {enableCta && (
+                    <div className="pt-6 pb-2 text-center">
+                      <a
+                        href={ctaUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ backgroundColor: ctaColor || brandColor || "#4F46E5" }}
+                        className="inline-flex items-center gap-2 px-7 py-3 rounded-full text-white text-xs sm:text-sm font-bold shadow-md hover:opacity-95 transition cursor-pointer"
+                      >
+                        <span>{ctaText}</span>
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    </div>
+                  )}
+
+                  {/* Mailchimp Social Links & Compliance Footer */}
+                  <div className="mt-8 pt-6 border-t border-slate-100 text-center space-y-2 text-xs">
+                    {enableSocial && (
+                      <div className="flex items-center justify-center gap-4 text-slate-500 py-1">
+                        {websiteUrl && (
+                          <a href={websiteUrl} target="_blank" rel="noreferrer" className="hover:text-indigo-600 transition flex items-center gap-1 text-[11px] font-medium">
+                            <Globe className="h-3.5 w-3.5" /> Web
+                          </a>
+                        )}
+                        {instagramUrl && (
+                          <a href={instagramUrl} target="_blank" rel="noreferrer" className="hover:text-rose-600 transition flex items-center gap-1 text-[11px] font-medium">
+                            <Camera className="h-3.5 w-3.5" /> Instagram
+                          </a>
+                        )}
+                        {whatsappUrl && (
+                          <a href={whatsappUrl} target="_blank" rel="noreferrer" className="hover:text-emerald-600 transition flex items-center gap-1 text-[11px] font-medium">
+                            <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
+                          </a>
+                        )}
+                      </div>
+                    )}
+
+                    <p className="text-[10px] text-slate-400">
+                      {footerAddress}
+                    </p>
+                    <p className="text-[10px] text-slate-400">
+                      Email ini dikirimkan resmi oleh <strong>{orgName}</strong> kepada {recipient.email}.{" "}
+                      <a href="#unsubscribe" className="underline text-slate-500 hover:text-slate-800">
+                        Unsubscribe
+                      </a>
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* 5. GMAIL BOTTOM REPLY / FORWARD ACTIONS */}
+              <div className="max-w-xl mx-auto pt-4 flex items-center gap-2.5">
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 shadow-2xs transition cursor-pointer"
+                >
+                  <Reply className="h-3.5 w-3.5 text-slate-500" />
+                  <span>Reply</span>
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 shadow-2xs transition cursor-pointer"
+                >
+                  <Forward className="h-3.5 w-3.5 text-slate-500" />
+                  <span>Forward</span>
+                </button>
+              </div>
             </div>
           </div>
         ) : (
