@@ -4,6 +4,7 @@ import {setupSwagger} from "./config/swagger";
 import {errorHandler} from "./middlewares/error.middleware";
 import authRoutes from './routes/auth.routes';
 import userRoutes from "./routes/user.routes";
+import roleRoutes from "./routes/role.routes";
 
 const app = express();
 
@@ -17,6 +18,7 @@ app.use(express.json());
 setupSwagger(app);
 
 app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/roles', roleRoutes);
 app.use('/api/v1/users', userRoutes)
 
 app.use(errorHandler);

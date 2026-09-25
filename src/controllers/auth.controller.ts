@@ -105,6 +105,9 @@ export const loginController = async (req: Request, res: Response ) => {
         if (error.message === "INVALID_CREDENTIALS") {
             return res.status(401).json({message: "Email atau password salah"});
         }
+        if (error.message === "ACCOUNT_LOCKED") {
+            return res.status(403).json({message: "Akun Anda terkunci sementara karena terlalu banyak percobaan login yang gagal. Silakan coba lagi dalam 15 menit."});
+        }
         if (error.message === "EMAIL_NOT_VERIFIED") {
             return res.status(403).json({message: "Silahkan verifikasi email Anda terlebih dahulu"});
         }

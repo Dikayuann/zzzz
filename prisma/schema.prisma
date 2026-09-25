@@ -26,14 +26,16 @@ model Tenant {
 }
 
 model User {
-  id           Int       @id @default(autoincrement())
-  tenantId     Int       @map("tenant_id")
-  name         String    @db.VarChar(255)
-  email        String    @unique @db.VarChar(255)
-  passwordHash String    @map("password_hash") @db.VarChar(255)
-  status       String    @db.VarChar(50)
-  mfaEnabled   Boolean   @default(false) @map("mfa_enabled")
-  lastLoginAt  DateTime? @map("last_login_at")
+  id               Int       @id @default(autoincrement())
+  tenantId         Int       @map("tenant_id")
+  name             String    @db.VarChar(255)
+  email            String    @unique @db.VarChar(255)
+  passwordHash     String    @map("password_hash") @db.VarChar(255)
+  status           String    @db.VarChar(50)
+  mfaEnabled       Boolean   @default(false) @map("mfa_enabled")
+  failedLoginCount Int       @default(0) @map("failed_login_count")
+  lockedUntil      DateTime? @map("locked_until")
+  lastLoginAt      DateTime? @map("last_login_at")
 
   tenant             Tenant              @relation(fields: [tenantId], references: [id])
   userRoles          UserRole[]
@@ -104,8 +106,8 @@ model Role {
   name     String  @db.VarChar(255)
   isCustom Boolean @default(false) @map("is_custom")
 
-  tenant    Tenant?    @relation(fields: [tenantId], references: [id])
-  userRoles UserRole[]
+  tenant          Tenant?          @relation(fields: [tenantId], references: [id])
+  userRoles       UserRole[]
   rolePermissions RolePermission[]
 
   @@map("roles")
@@ -123,22 +125,22 @@ model UserRole {
 }
 
 model Permission {
-   id        Int      @id @default(autoincrement())
+  id        Int      @id @default(autoincrement())
   module    String   @db.VarChar(50)
   action    String   @db.VarChar(50)
   createdAt DateTime @default(now()) @map("created_at")
 
   rolePermissions RolePermission[]
 
-@@unique([module, action])
-@@map("permissions")
+  @@unique([module, action])
+  @@map("permissions")
 }
 
 model RolePermission {
-  roleId      Int @map("role_id")
+  roleId       Int @map("role_id")
   permissionId Int @map("permission_id")
 
-  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
   permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
 
   @@id([roleId, permissionId])

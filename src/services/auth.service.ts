@@ -9,6 +9,7 @@ import { RegisterInput,
     ForgotPasswordInput,
     ResetPasswordInput,
     ChangePasswordInput } from "../schemas/auth.schema";
+import { logAudit } from "../lib/audit";
 
 
 const BCRYPT_ROUNDS = 12;
@@ -72,6 +73,15 @@ export const registerUser = async (data: RegisterInput) => {
         });
 
         return { user, rawToken };
+    });
+
+    await logAudit({
+        tenantId: result.user.tenantId,
+        actorId: result.user.id,
+        action: "USER_REGISTER",
+        entityType: "User",
+        entityId: result.user.id,
+        details: { email: data.email, organizationName: data.organizationName },
     });
 
     return result;
@@ -152,15 +162,69 @@ export const loginUser = async (data: LoginInput ) => {
         },
     });
 
-
     if (!user) {
         throw new Error("INVALID_CREDENTIALS")
     }
 
+    // cek apakah akun sedang terkunci
+    if (user.lockedUntil) {
+        const now = new Date();
+        if (user.lockedUntil > now) {
+            // masih terkunci
+            throw new Error("ACCOUNT_LOCKED")
+        }
+        // Jika waktu 15 menit sudah lewat, buka kuncian di database
+        await prisma.user.update({
+            where: { id: user.id },
+            data: { failedLoginCount: 0, lockedUntil: null },
+        });
+        // Reset juga variabel di memori JavaScript agar tidak membawa nilai 5 lama
+        user.failedLoginCount = 0;
+        user.lockedUntil = null;
+    }
+
+    //cek password
     const isPasswordValid = await bcrypt.compare(data.password, user.passwordHash);
+
     if (!isPasswordValid) {
+        const newCount = user.failedLoginCount + 1;
+        const updateData: any = { failedLoginCount: newCount };
+
+        // Jika sudah 5x salah, set waktu lockout 15 menit dari sekarang
+        if (newCount >= 5 ) {
+            updateData.lockedUntil = new Date(Date.now() + 1000 * 60 * 15); // 15 menit
+        }
+
+        await prisma.user.update({
+            where: { id: user.id },
+            data: updateData,
+        });
+
+        // Lempar ACCOUNT_LOCKED jika ini percobaan ke-5 (baru saja terkunci)
+        if (newCount >= 5) {
+            await logAudit({ tenantId: user.tenantId,
+            actorId: user.id ,
+            action: "ACCOUNT_LOCKED",
+            entityType: "User",
+            entityId: user.id,
+            details: { email: user.email, reason: "5_FAILED_LOGIN_ATTEMPTS" },
+            });
+            throw new Error("ACCOUNT_LOCKED");
+        }
+
+        // catat percobaan gagal
+        await logAudit({
+            tenantId: user.tenantId,
+            actorId: user.id,
+            action: "LOGIN_FAILED",
+            entityType: "User",
+            entityId: user.id,
+            details: { email: user.email, failedCount: newCount },
+        });
+
         throw new Error("INVALID_CREDENTIALS");
     }
+
 
     // wajib sudah verifikasi email
     if (user.status === "PENDING_VERIFICATION") {
@@ -174,7 +238,10 @@ export const loginUser = async (data: LoginInput ) => {
     // update lastLoginAt
     await prisma.user.update({
         where: {id: user.id },
-        data: { lastLoginAt: new Date() },
+        data: {
+            failedLoginCount: 0,
+            lockedUntil: null,
+            lastLoginAt: new Date() },
     });
 
     const roles = user.userRoles.map((ur) => ur.role.name)
@@ -202,6 +269,15 @@ export const loginUser = async (data: LoginInput ) => {
             expiresAt,
         },
     });
+
+    await logAudit({
+        tenantId: user.tenantId,
+        actorId: user.id,
+        action: "USER_LOGIN",
+        entityType: "User",
+        entityId: user.id,
+        details: { email: user.email },
+    })
 
     return {
         accessToken,
@@ -260,15 +336,29 @@ export const refreshAccessToken = async (data: RefreshTokenInput) => {
 export const logoutUser = async (rawRefreshToken: string) => {
     const tokenHash = crypto.createHash("sha256").update(rawRefreshToken).digest("hex");
 
-    await prisma.refreshToken.updateMany({
-        where: {
-            tokenHash,
-            revokedAt: null,
-        },
-        data: {
-            revokedAt: new Date(),
-        },
+
+    // mencari token record beserta relasi user
+    const tokenRecord = await prisma.refreshToken.findFirst({
+        where: {tokenHash, revokedAt: null},
+        include: {user: true},
     });
+
+    if (tokenRecord) {
+        await prisma.refreshToken.update({
+            where: {id: tokenRecord.id},
+            data: {revokedAt: new Date()},
+        });
+
+    // catat audit log logout
+    await logAudit({
+        tenantId: tokenRecord.user.tenantId,
+        actorId: tokenRecord.user.id,
+        action: "USER_LOGOUT",
+        entityType: "User",
+        entityId: tokenRecord.user.id,
+        details: {email: tokenRecord.user.email},
+    });
+}
 
     return { success: true };
 }
@@ -295,6 +385,15 @@ export const forgotPassword = async (data: ForgotPasswordInput) => {
             expiresAt,
         },
     });
+
+    await logAudit({
+        tenantId: user.tenantId,
+        actorId: user.id,
+        action: "FORGOT_PASSWORD_REQUEST",
+        entityType: "User",
+        entityId: user.id,
+        details: {email: user.email},
+    })
 
     return { success: true, rawToken };
 }
@@ -336,6 +435,13 @@ export const resetPassword = async (data: ResetPasswordInput) => {
         });
     });
 
+    await logAudit({
+        actorId: record.userId,
+        action: "RESET_PASSWORD_SUCCESS",
+        entityType: "User",
+        entityId: record.userId,
+    });
+
     return { success: true };
 };
 
@@ -360,6 +466,14 @@ export const changePassword = async (userId: number, data: ChangePasswordInput )
         where: { id: userId },
         data: { passwordHash: newPasswordHash  },
     });
+
+    await logAudit({
+        tenantId: user.tenantId,
+        actorId: userId,
+        action: "CHANGE_PASSWORD_SUCCESS",
+        entityType: "User",
+        entityId: userId,
+    })
 
     return { success: true };
 }
