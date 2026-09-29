@@ -22,6 +22,10 @@ model Tenant {
   roles     Role[]
   auditLogs AuditLog[]
 
+  contacts Contact[]
+  lists    List[]
+  tags     Tag[]
+
   @@map("tenants")
 }
 
@@ -145,4 +149,94 @@ model RolePermission {
 
   @@id([roleId, permissionId])
   @@map("role_permissions")
+}
+
+model Contact {
+  id             Int       @id @default(autoincrement())
+  tenantId       Int       @map("tenant_id")
+  name           String    @db.VarChar(255)
+  email          String?   @db.VarChar(255)
+  phone          String?   @db.VarChar(255)
+  whatsappNumber String?   @map("whatsapp_number") @db.VarChar(255)
+  teleChatId     String?   @map("tele_chat_id") @db.VarChar(255)
+  status         String    @default("active") @db.VarChar(50)
+  customFields   Json?     @map("custom_fields_json")
+  lastInboundAt  DateTime? @map("last_inbound_at")
+  deletedAt      DateTime? @map("deleted_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  listContacts ListContact[]
+  contactTags  ContactTag[]
+  consents     Consent[]
+
+  @@index([tenantId], map: "idx_contacts_tenant")
+  @@index([tenantId, whatsappNumber], map: "idx_contacts_tenant_wa")
+  @@index([tenantId, email], map: "idx_contacts_tenant_email")
+  @@map("contacts")
+}
+
+model List {
+  id          Int      @id @default(autoincrement())
+  tenantId    Int      @map("tenant_id")
+  name        String   @db.VarChar(255)
+  description String?  @db.VarChar(255)
+  status      String   @default("active") @db.VarChar(50)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  listContacts ListContact[]
+
+  @@unique([tenantId, name], map: "uq_list_tenant_name")
+  @@map("lists")
+}
+
+model ListContact {
+  listId    Int      @map("list_id")
+  contactId Int      @map("contact_id")
+  addedAt   DateTime @default(now()) @map("added_at")
+
+  list    List    @relation(fields: [listId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@id([listId, contactId])
+  @@index([contactId], map: "idx_list_contacts_contact")
+  @@map("list_contacts")
+}
+
+model Tag {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int      @map("tenant_id")
+  name      String   @db.VarChar(100)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contactTags ContactTag[]
+
+  @@unique([tenantId, name], map: "uq_tag_tenant_name")
+  @@map("tags")
+}
+
+model ContactTag {
+  contactId Int @map("contact_id")
+  tagId     Int @map("tag_id")
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tag     Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, tagId])
+  @@map("contact_tags")
+}
+
+model Consent {
+  id        Int      @id @default(autoincrement())
+  contactId Int      @map("contact_id")
+  status    String   @default("opted_in") @db.VarChar(50)
+  channel   String   @db.VarChar(50)
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([contactId, channel], map: "uq_consent_contact_channel")
+  @@map("consents")
 }
