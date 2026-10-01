@@ -6,6 +6,8 @@ import authRoutes from './routes/auth.routes';
 import userRoutes from "./routes/user.routes";
 import roleRoutes from "./routes/role.routes";
 import contactRoutes from "./routes/contact.routes";
+import listRoutes from "./routes/list.routes";
+import tagRoutes from "./routes/tag.routes";
 
 const app = express();
 
@@ -21,6 +23,8 @@ setupSwagger(app);
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/roles', roleRoutes);
 app.use('/api/v1/contacts', contactRoutes);
+app.use('/api/v1/lists', listRoutes);
+app.use('/api/v1/tags', tagRoutes);
 app.use('/api/v1/users', userRoutes)
 
 app.use(errorHandler);
