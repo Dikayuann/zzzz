@@ -3,11 +3,13 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "strict": true
+    "strict": true,
+    "skipLibCheck": true
   },
   "include": ["src"],
   "exclude": [
     "node_modules",
+    "frontend",
     "dist",
     "build",
     ".git",

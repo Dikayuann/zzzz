@@ -6,6 +6,7 @@ import {
     updateContactController,
     deleteContactController,
     bulkDeleteContactsController,
+    importContactsController,
 } from "../controllers/contact.controller";
 import { authenticateJWT } from "../middlewares/auth.middleware";
 import { requirePermission } from "../middlewares/rbac.middleware";
@@ -160,6 +161,42 @@ router.put("/:id", requirePermission("contacts", "edit"), updateContactControlle
  *       404:
  *         description: Kontak tidak ditemukan
  */
+/**
+ * @openapi
+ * /contacts/import:
+ *   post:
+ *     summary: Bulk import kontak (CSV / Excel data)
+ *     tags: [Contacts]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [contacts]
+ *             properties:
+ *               contacts:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required: [name]
+ *                   properties:
+ *                     name: { type: string, example: "Andi Pratama" }
+ *                     email: { type: string, example: "andi@example.com" }
+ *                     phone: { type: string, example: "081298765432" }
+ *                     whatsappNumber: { type: string, example: "081298765432" }
+ *               listId: { type: integer, example: 1 }
+ *               tagsIds: { type: array, items: { type: integer }, example: [1] }
+ *               duplicateStrategy: { type: string, enum: [skip, update], default: skip }
+ *     responses:
+ *       200:
+ *         description: Proses import kontak selesai
+ */
+router.post("/import", requirePermission("contacts", "create"), importContactsController);
+
+
 router.delete("/:id", requirePermission("contacts", "delete"), deleteContactController);
 
 /**

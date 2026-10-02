@@ -55,8 +55,30 @@ export const bulkDeleteContactSchema = z.object({
   contactIds: z.array(z.number().int().positive("ID kontak tidak valid")).min(1, "Minimal pilih 1 kontak untuk dihapus"),
 });
 
+export const importContactItemSchema = z.object({
+    name: z.string().trim().min(1 ,"Nama kontak wajib diisi").max(255, "Nama kontak maksimal 255 karakter"),
+    email: z.string().trim().email("Format email tidak valid").optional().or(z.literal("")),
+    phone: z.string().trim().optional(),
+    whatsappNumber: z.string().trim().optional(),
+    teleChatId: z.string().trim().optional(),
+    customFields: z.record(z.string(), z.any()).optional(),
+
+});
+
+// schema untuk playload request import
+export const importContactsSchema  = z.object({
+    contacts: z
+        .array(importContactItemSchema)
+        .min(1, "Minimal 1 kontak harus diimpor")
+        .max(1000, "Maksimal 1000 kontak dapat diimpor"),
+        listId: z.number().int().positive("ID list tidak valid").optional(),
+        tagsIds: z.array(z.number().int().positive("ID tag tidak valid")).optional(),
+        duplicateStrategy: z.enum(["skip", "update", "skip"]).default("skip"),
+});
 
 export type CreateContactInput = z.infer<typeof createContactSchema>;
 export type UpdateContactInput = z.infer<typeof updateContactSchema>;
 export type ContactQueryInput = z.infer<typeof contactQuerySchema>;
 export type BulkDeleteContactInput = z.infer<typeof bulkDeleteContactSchema>;
+export type ImportContactsItemInput = z.infer<typeof importContactItemSchema>;
+export type ImportContactsInput = z.infer<typeof importContactsSchema>;

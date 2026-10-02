@@ -4,6 +4,7 @@ import {
     updateContactSchema,
     contactQuerySchema,
     bulkDeleteContactSchema,
+    importContactsSchema,
 } from "../schemas/contact.schema";
 
 import {
@@ -13,6 +14,7 @@ import {
     updateContact,
     deleteContact,
     bulkDeleteContacts,
+    importContacts,
 } from "../services/contact.services";
 
 export const getContactsController = async (req: Request, res: Response) => {
@@ -190,6 +192,36 @@ export const bulkDeleteContactsController = async (req: Request, res: Response) 
         return res.status(200).json({ message: `${result.count} kontak berhasil dihapus` , count: result.count });
     } catch (error) {
         console.error("[Bulk Delete Contact Error]:", error);
+        return res.status(500).json({ message: "Terjadi kesalahan internal" });
+    }
+};
+
+// POST /contacts/import - Bulk import kontak (CSV / Excel batch data)
+export const importContactsController = async (req: Request, res: Response) => {
+    const tenantId = req.user?.tenantId;
+    const actorId = req.user?.userId;
+
+    if (!tenantId || !actorId) {
+        return res.status(401).json({ message: "Akses tidak diizinkan" });
+    }
+
+    const parsed = importContactsSchema.safeParse(req.body);
+    if (!parsed.success) {
+        return res.status(400).json({
+            message: "Data import tidak valid",
+            errors: parsed.error.issues.map((i) => i.message),
+        });
+    }
+    try {
+        const result = await importContacts(tenantId, actorId, parsed.data);
+        return res.status(200).json({
+            message: "Proses import kontak selesai", data: result
+        });
+    } catch (error: any) {
+        if (error.message === "INVALID_LIST") {
+            return res.status(400).json({ message: "Satu atau lebih tag yang dipilih tidak valid" });
+        }
+        console.error("[Import Contacts Error]:", error);
         return res.status(500).json({ message: "Terjadi kesalahan internal" });
     }
 };

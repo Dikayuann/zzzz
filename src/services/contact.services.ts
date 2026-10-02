@@ -5,6 +5,7 @@ import {
     UpdateContactInput,
     ContactQueryInput,
     BulkDeleteContactInput,
+    ImportContactsInput,
 } from "../schemas/contact.schema";
 
 export const normalizePhoneNumber = (phone?: string): string | undefined => {
@@ -390,3 +391,170 @@ export const bulkDeleteContacts = async (
 
     return { success: true, count: result.count };
 };
+
+// bulk import kontak (csv / excel)
+export const importContacts = async ( tenantId:number, actorId: number, data: ImportContactsInput )=> {
+    // validasi apakah listId valid milik tenant ini
+    if (data.listId) {
+        const listExist = await prisma.list.findFirst({ where: { id: data.listId, tenantId } });
+
+        if (!listExist) throw new Error("INVALID_LIST");
+    }
+
+    // validasi apakah semua tagIds valid milik tenant ini
+    if (data.tagsIds && data.tagsIds.length > 0) {
+        const validTags = await prisma.tag.findMany({ where: {id: { in: data.tagsIds }, tenantId},
+        });
+        if (validTags.length !== data.tagsIds.length) {
+            throw new Error("INVALID_TAGS");
+        }
+    }
+
+    let importedCount = 0;
+    let updatedCount = 0;
+    let skippedCount = 0;
+    const errors: Array<{ row: number; name?: string; error: string }> = [];
+
+    // proses setiap baris kontak
+    for (let i = 0; i < data.contacts.length; i++) {
+        const row = data.contacts[i];
+        const rowNum = i + 1;
+
+        const normalizedWA = normalizePhoneNumber(row.whatsappNumber || row.phone);
+        const email = row.email && row.email.trim().length > 0 ? row.email.trim() : null;
+
+        // wajib minimal ada email atau whatsApp
+        if (!email && !normalizedWA) {
+            errors.push({
+                row: rowNum,
+                name: row.name,
+                error: "Minimal salah satu dari Email atau WhatsApp harus diisi",
+            });
+            skippedCount++;
+            continue;
+        }
+
+        // Cek apakah sudah ada kontak aktif dengan nomor/email yang sama di tenant ini
+        const conflictOr: any[] = [];
+        if (email) conflictOr.push({ email });
+        if (normalizedWA) conflictOr.push({ whatsappNumber: normalizedWA  });
+
+        const existing = await prisma.contact.findFirst({
+            where: { tenantId, deletedAt: null, OR: conflictOr }
+        });
+
+        if (existing) {
+            if (data.duplicateStrategy === "skip") {
+                skippedCount++;
+                continue;
+            } else if (data.duplicateStrategy === "update") {
+                // update profil kontak yang sudah ada
+                await prisma.$transaction(async (tx) => {
+                    await tx.contact.update({
+                        where: { id: existing.id },
+                        data: {
+                            name: row.name || existing.name,
+                            phone: row.phone || existing.phone,
+                            teleChatId: row.teleChatId || existing.teleChatId,
+                            customFields: row.customFields !== undefined ? row.customFields : undefined,
+                        },
+                    });
+                    // menghubungkan ke list target jika belum tergabung
+                    if (data.listId) {
+                        await tx.listContact.upsert({
+                            where: { listId_contactId: { listId: data.listId, contactId: existing.id } },
+                            update: {},
+                            create: { listId: data.listId, contactId: existing.id },
+                        });
+                    }
+                    // hubungkan ke tag target jika belum ada
+                    const targetTags = data.tagsIds;
+                    if (targetTags && targetTags.length > 0) {
+                        for (const tagId of targetTags) {
+                            await tx.contactTag.upsert({
+                                where: {
+                                    contactId_tagId: { contactId: existing.id, tagId },
+                                },
+                                update: {},
+                                create: { contactId: existing.id, tagId },
+                            });
+                        }
+                    }
+                });
+                updatedCount++;
+            }
+        } else {
+            // kontak baru
+            await prisma.$transaction(async (tx) => {
+                const created = await tx.contact.create({
+                    data: {
+                        tenantId,
+                        name: row.name,
+                        email,
+                        phone: row.phone || null,
+                        whatsappNumber: normalizedWA || null,
+                        teleChatId: row.teleChatId || null,
+                        status: "active",
+                        customFields: row.customFields || undefined,
+                    },
+                });
+
+                // catat status persetujuan (consent) otomatis
+                const consentsData: any[] = [];
+                if (email)
+                    consentsData.push({ contactId: created.id, channel: "email", status: "opted_in" });
+                if (normalizedWA)
+                    consentsData.push({ contactId: created.id, channel: "whatsapp", status: "opted_in" });
+                if (row.teleChatId)
+                    consentsData.push({ contactId: created.id, channel: "telegram", status: "opted_in" });
+
+                if (consentsData.length > 0) {
+                    await tx.consent.createMany({ data: consentsData });
+                }
+
+                // hubungkan ke list jika ada
+                if (data.listId) {
+                    await tx.listContact.create({
+                        data: { listId: data.listId, contactId: created.id },
+                    });
+                }
+
+                // hubungkan ke tag jika ada
+                const targetTags = data.tagsIds;
+                if (targetTags && targetTags.length > 0) {
+                    await tx.contactTag.createMany({
+                        data: targetTags.map((tagId) => ({ contactId: created.id, tagId })),
+                    });
+                }
+            });
+            importedCount++;
+        }
+    }
+
+    // Catat riwayat import ke tabel audit_logs setelah SEMUA baris selesai diproses
+    await logAudit({
+        tenantId,
+        actorId,
+        action: "CONTACT_IMPORT",
+        entityType: "Contact",
+        details: {
+            totalRows: data.contacts.length,
+            importedCount,
+            updatedCount,
+            skippedCount,
+            errorsCount: errors.length,
+            strategy: data.duplicateStrategy,
+            listId: data.listId,
+        },
+    });
+
+    return {
+        totalRows: data.contacts.length,
+        importedCount,
+        updatedCount,
+        skippedCount,
+        errors,
+    };
+};
+
+
