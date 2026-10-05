@@ -25,6 +25,7 @@ model Tenant {
   contacts Contact[]
   lists    List[]
   tags     Tag[]
+  smtpConfig smtpConfig? 
 
   @@map("tenants")
 }
@@ -239,4 +240,20 @@ model Consent {
 
   @@unique([contactId, channel], map: "uq_consent_contact_channel")
   @@map("consents")
+}
+
+model smtpConfig {
+  id                Int       @id @default(autoincrement())
+  tenantId          Int       @unique @map("tenant_id")
+  host              String    @db.VarChar(255)
+  port              Int       @default(587)
+  username          String    @db.VarChar(255)
+  passwordEncrypted String    @map("password_encrypted") @db.VarChar(255)
+  fromName          String?   @map("from_name") @db.VarChar(255)
+  fromEmail         String?   @map("from_email") @db.VarChar(255)
+  encryption        String    @default("TLS") @db.VarChar(50) // "SSL", "TLS", "none"
+  verifiedAt        DateTime? @map("verified_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@map("smtp_configs") 
 }

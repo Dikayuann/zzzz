@@ -20,6 +20,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { api } from "@/lib/api";
 
 type ChannelTab = "email" | "telegram" | "whatsapp";
 type WaSubTab = "meta" | "qrcode";
@@ -40,6 +41,7 @@ interface SmtpConfig {
   fromName: string;
   fromEmail: string;
   replyTo?: string;
+  hasPassword?: boolean;
 }
 
 interface TelegramConfig {
@@ -82,33 +84,59 @@ export const ChannelsPage: React.FC = () => {
   const [isScanningQr, setIsScanningQr] = useState(false);
 
   // Email states
-  const [smtpConnected, setSmtpConnected] = useState(true);
+  const [smtpConnected, setSmtpConnected] = useState(false);
   const [isTestingSmtp, setIsTestingSmtp] = useState(false);
+  const [isSavingSmtp, setIsSavingSmtp] = useState(false);
+  const [isLoadingSmtp, setIsLoadingSmtp] = useState(false);
   const [showSmtpPassword, setShowSmtpPassword] = useState(false);
   const [showEmailTestModal, setShowEmailTestModal] = useState(false);
-  const [testEmailRecipient, setTestEmailRecipient] = useState("budi.santoso@startup.id");
+  const [testEmailRecipient, setTestEmailRecipient] = useState("");
 
-  const [smtpConfig, setSmtpConfig] = useState<SmtpConfig>(() => {
-    const saved = localStorage.getItem("channel_smtp");
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error(e);
-      }
-    }
-    return {
-      preset: "gmail",
-      host: "smtp.gmail.com",
-      port: "587",
-      encryption: "TLS",
-      username: "marketing@startup.id",
-      password: "••••••••••••••••",
-      fromName: "Acme Broadcast",
-      fromEmail: "newsletter@startup.id",
-      replyTo: "support@startup.id",
-    };
+  const [smtpConfig, setSmtpConfig] = useState<SmtpConfig>({
+    preset: "gmail",
+    host: "smtp.gmail.com",
+    port: "587",
+    encryption: "TLS",
+    username: "",
+    password: "",
+    fromName: "",
+    fromEmail: "",
+    replyTo: "",
+    hasPassword: false,
   });
+
+  // Ambil konfigurasi SMTP dari backend
+  useEffect(() => {
+    const fetchSmtp = async () => {
+      setIsLoadingSmtp(true);
+      try {
+        const res = await api.get("/settings/smtp");
+        const data = res.data?.data;
+        if (data) {
+          setSmtpConfig((prev) => ({
+            ...prev,
+            host: data.host || "",
+            port: String(data.port || 587),
+            username: data.username || "",
+            password: "",
+            fromName: data.fromName || "",
+            fromEmail: data.fromEmail || "",
+            encryption: data.encryption === "none" ? "None" : (data.encryption as "TLS" | "SSL"),
+            hasPassword: Boolean(data.hasPassword),
+          }));
+          setSmtpConnected(Boolean(data.verifiedAt));
+        } else {
+          setSmtpConnected(false);
+        }
+      } catch (err: any) {
+        console.error("Gagal mengambil konfigurasi SMTP:", err);
+      } finally {
+        setIsLoadingSmtp(false);
+      }
+    };
+
+    fetchSmtp();
+  }, []);
 
   // Telegram states
   const [telegramConnected, setTelegramConnected] = useState(true);
@@ -249,38 +277,88 @@ export const ChannelsPage: React.FC = () => {
   };
 
   // 2. Email Actions
-  const handleSaveSmtp = (e: React.FormEvent) => {
+  const handleSaveSmtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    localStorage.setItem("channel_smtp", JSON.stringify(smtpConfig));
-    toast.success("Pengaturan SMTP Email berhasil disimpan!", {
-      description: `Server ${smtpConfig.host}:${smtpConfig.port} siap mengirim broadcast.`,
-    });
+    if (!smtpConfig.host || !smtpConfig.port || !smtpConfig.username) {
+      toast.error("Host, Port, dan Username wajib diisi!");
+      return;
+    }
+    if (!smtpConfig.hasPassword && !smtpConfig.password) {
+      toast.error("Password / App Password wajib diisi untuk konfigurasi awal!");
+      return;
+    }
+
+    setIsSavingSmtp(true);
+    try {
+      const payload = {
+        host: smtpConfig.host,
+        port: parseInt(smtpConfig.port, 10) || 587,
+        username: smtpConfig.username,
+        password: smtpConfig.password && smtpConfig.password.trim().length > 0 ? smtpConfig.password : undefined,
+        fromName: smtpConfig.fromName,
+        fromEmail: smtpConfig.fromEmail,
+        encryption: smtpConfig.encryption,
+      };
+
+      const res = await api.post("/settings/smtp", payload);
+      const saved = res.data?.data;
+      if (saved) {
+        setSmtpConfig((prev) => ({
+          ...prev,
+          hasPassword: Boolean(saved.hasPassword),
+          password: "",
+        }));
+        setSmtpConnected(Boolean(saved.verifiedAt));
+      }
+
+      toast.success("Pengaturan SMTP Email berhasil disimpan!", {
+        description: `Server ${smtpConfig.host}:${smtpConfig.port} siap mengirim broadcast.`,
+      });
+    } catch (err: any) {
+      const msg = err.response?.data?.message || "Gagal menyimpan konfigurasi SMTP";
+      toast.error(msg);
+    } finally {
+      setIsSavingSmtp(false);
+    }
   };
 
   const handleVerifySmtp = () => {
-    setIsTestingSmtp(true);
-    setTimeout(() => {
-      setIsTestingSmtp(false);
-      setSmtpConnected(true);
-      setShowEmailTestModal(true);
-      toast.success("Handshake SMTP Berhasil!", {
-        description: `Terhubung ke ${smtpConfig.host} dengan enkripsi ${smtpConfig.encryption}.`,
-      });
-    }, 1000);
+    if (!smtpConfig.hasPassword && !smtpConfig.password) {
+      toast.error("Simpan konfigurasi SMTP terlebih dahulu sebelum pengujian.");
+      return;
+    }
+    if (!testEmailRecipient && smtpConfig.username.includes("@")) {
+      setTestEmailRecipient(smtpConfig.username);
+    }
+    setShowEmailTestModal(true);
   };
 
-  const handleSendEmailTest = () => {
-    toast.promise(
-      new Promise((resolve) => setTimeout(resolve, 1400)),
-      {
-        loading: `Mengirim email uji coba ke ${testEmailRecipient}...`,
-        success: () => {
-          setShowEmailTestModal(false);
-          return `Email uji coba berhasil dikirim ke ${testEmailRecipient} (250 OK)`;
-        },
-        error: "Gagal mengirim email tes",
-      }
-    );
+  const handleSendEmailTest = async () => {
+    if (!testEmailRecipient || !testEmailRecipient.includes("@")) {
+      toast.error("Alamat email penerima uji coba tidak valid!");
+      return;
+    }
+
+    setIsTestingSmtp(true);
+    try {
+      const res = await api.post("/settings/smtp/test", {
+        testEmail: testEmailRecipient,
+      });
+
+      setShowEmailTestModal(false);
+      setSmtpConnected(true);
+      toast.success("Email Uji Coba Berhasil Dikirim!", {
+        description: res.data?.message || `Email uji coba berhasil mendarat di ${testEmailRecipient}`,
+      });
+    } catch (err: any) {
+      const msg = err.response?.data?.message || "Pengiriman email uji coba gagal";
+      const detail = err.response?.data?.detail;
+      toast.error(msg, {
+        description: detail || "Periksa kembali konfigurasi host, port, atau kredensial akun.",
+      });
+    } finally {
+      setIsTestingSmtp(false);
+    }
   };
 
   // 3. Telegram Actions
@@ -345,7 +423,11 @@ export const ChannelsPage: React.FC = () => {
           <span>Email</span>
           <span
             className={`h-2 w-2 rounded-full ${
-              smtpConnected ? "bg-emerald-500" : "bg-amber-400"
+              smtpConnected
+                ? "bg-emerald-500"
+                : smtpConfig.hasPassword
+                ? "bg-amber-400"
+                : "bg-slate-300"
             }`}
           />
         </button>
@@ -708,15 +790,27 @@ export const ChannelsPage: React.FC = () => {
               className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${
                 smtpConnected
                   ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                  : "bg-amber-50 text-amber-700 border-amber-200"
+                  : smtpConfig.hasPassword
+                  ? "bg-amber-50 text-amber-700 border-amber-200"
+                  : "bg-slate-100 text-slate-600 border-slate-200"
               }`}
             >
               <span
                 className={`h-2 w-2 rounded-full ${
-                  smtpConnected ? "bg-emerald-500" : "bg-amber-500"
+                  smtpConnected
+                    ? "bg-emerald-500 animate-pulse"
+                    : smtpConfig.hasPassword
+                    ? "bg-amber-500"
+                    : "bg-slate-400"
                 }`}
               />
-              <span>{smtpConnected ? "Terhubung" : "Belum terhubung"}</span>
+              <span>
+                {smtpConnected
+                  ? "Terhubung"
+                  : smtpConfig.hasPassword
+                  ? "Tersimpan (Belum Diverifikasi)"
+                  : "Belum Dikonfigurasi"}
+              </span>
             </div>
           </div>
 
@@ -833,6 +927,11 @@ export const ChannelsPage: React.FC = () => {
                     onChange={(e) =>
                       setSmtpConfig({ ...smtpConfig, password: e.target.value })
                     }
+                    placeholder={
+                      smtpConfig.hasPassword
+                        ? "•••••••• (Tersimpan - ketik jika ingin mengubah)"
+                        : "••••••••••••••••"
+                    }
                     className="w-full h-11 pl-4 pr-10 rounded-xl border border-slate-200/90 bg-slate-50/40 focus:bg-white text-xs text-slate-800 focus:outline-none focus:border-sky-500 transition shadow-2xs"
                   />
                   <button
@@ -887,24 +986,19 @@ export const ChannelsPage: React.FC = () => {
               <button
                 type="button"
                 onClick={handleVerifySmtp}
-                disabled={isTestingSmtp}
+                disabled={isTestingSmtp || isSavingSmtp || isLoadingSmtp}
                 className="px-5 py-2.5 rounded-xl border border-sky-300 text-sky-600 hover:bg-sky-50/60 text-xs font-semibold transition cursor-pointer active:scale-95 disabled:opacity-60 flex items-center gap-2"
               >
-                {isTestingSmtp ? (
-                  <>
-                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                    <span>Menguji Server...</span>
-                  </>
-                ) : (
-                  <span>Verifikasi & test</span>
-                )}
+                <span>Verifikasi & test</span>
               </button>
 
               <button
                 type="submit"
-                className="px-6 py-2.5 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-white text-xs font-semibold shadow-xs transition cursor-pointer active:scale-95"
+                disabled={isSavingSmtp || isLoadingSmtp}
+                className="px-6 py-2.5 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-white text-xs font-semibold shadow-xs transition cursor-pointer active:scale-95 disabled:opacity-60 flex items-center gap-2"
               >
-                Simpan
+                {isSavingSmtp && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+                <span>{isSavingSmtp ? "Menyimpan..." : "Simpan"}</span>
               </button>
             </div>
           </form>
@@ -1149,16 +1243,19 @@ export const ChannelsPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setShowEmailTestModal(false)}
-                className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                disabled={isTestingSmtp}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer disabled:opacity-60"
               >
                 Tutup
               </button>
               <button
                 type="button"
                 onClick={handleSendEmailTest}
-                className="px-5 py-2 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-white text-xs font-semibold shadow-xs transition cursor-pointer"
+                disabled={isTestingSmtp}
+                className="px-5 py-2 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-white text-xs font-semibold shadow-xs transition cursor-pointer active:scale-95 disabled:opacity-60 flex items-center gap-2"
               >
-                Kirim Email Tes
+                {isTestingSmtp && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+                <span>{isTestingSmtp ? "Mengirim Email..." : "Kirim Email Tes"}</span>
               </button>
             </DialogFooter>
           </div>

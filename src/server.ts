@@ -8,6 +8,8 @@ import roleRoutes from "./routes/role.routes";
 import contactRoutes from "./routes/contact.routes";
 import listRoutes from "./routes/list.routes";
 import tagRoutes from "./routes/tag.routes";
+import smtpRoutes from "./routes/smtp.routes";
+
 
 const app = express();
 
@@ -26,6 +28,7 @@ app.use('/api/v1/contacts', contactRoutes);
 app.use('/api/v1/lists', listRoutes);
 app.use('/api/v1/tags', tagRoutes);
 app.use('/api/v1/users', userRoutes)
+app.use('/api/v1/settings/smtp', smtpRoutes);
 
 app.use(errorHandler);
 

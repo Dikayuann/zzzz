@@ -8,6 +8,7 @@
     "jsonwebtoken": "^9.0.3",
     "mariadb": "^3.5.4",
     "mysql2": "^3.24.4",
+    "nodemailer": "^10.0.13",
     "swagger-jsdoc": "^6.3.0",
     "swagger-ui-express": "^5.0.1",
     "zod": "^4.6.2"
@@ -23,6 +24,7 @@
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.20.2",
+    "@types/nodemailer": "^8.0.2",
     "@types/swagger-jsdoc": "^6.0.4",
     "@types/swagger-ui-express": "^4.1.8",
     "dotenv": "^17.4.2",
