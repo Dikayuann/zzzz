@@ -1,0 +1,41 @@
+import { z } from "zod";
+
+export const channelModeEnum = z.enum(["email", "whatsapp", "telegram", "multiple"]);
+
+export const createTemplateSchema = z.object({
+
+
+    name: z.string().trim().min(2, "Nama template minimal 2 karakter").max(255),
+    channelMode: channelModeEnum.default("whatsapp"),
+    category: z.string().trim().max(100).optional(),
+
+    // konten versi awal
+    subject: z.string().trim().max(255).optional(),
+    preheader: z.string().trim().max(255).optional(),
+    contentJson: z.any().optional(),
+    contentHtml: z.string().optional(),
+    contentWhatsapp: z.string().optional(),
+    contentTelegram: z.string().optional(),
+})
+
+export const updateTemplateSchema = z.object({
+    name: z.string().trim().min(2, "Nama template minimal 2 karakter").max(255).optional(),
+    channelMode: channelModeEnum.optional(),
+    category: z.string().trim().max(100).optional()
+})
+
+export const createTemplateVersionSchema = z.object({
+    subject: z.string().trim().max(255).optional(),
+    preheader: z.string().trim().max(255).optional(),
+    contentJson: z.any().optional(),
+    contentHtml: z.string().optional(),
+    contentWhatsapp: z.string().optional(),
+    contentTelegram: z.string().optional(),
+})
+
+
+
+export type CreateTemplateInput = z.infer<typeof createTemplateSchema>
+export type UpdateTemplateInput = z.infer<typeof updateTemplateSchema>
+export type CreateTemplateVersionInput = z.infer<typeof createTemplateVersionSchema>
+

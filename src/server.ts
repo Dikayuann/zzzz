@@ -9,7 +9,7 @@ import contactRoutes from "./routes/contact.routes";
 import listRoutes from "./routes/list.routes";
 import tagRoutes from "./routes/tag.routes";
 import smtpRoutes from "./routes/smtp.routes";
-
+import templateRoutes from "./routes/template.routes";
 
 const app = express();
 
@@ -27,6 +27,7 @@ app.use('/api/v1/roles', roleRoutes);
 app.use('/api/v1/contacts', contactRoutes);
 app.use('/api/v1/lists', listRoutes);
 app.use('/api/v1/tags', tagRoutes);
+app.use('/api/v1/templates', templateRoutes);
 app.use('/api/v1/users', userRoutes)
 app.use('/api/v1/settings/smtp', smtpRoutes);
 

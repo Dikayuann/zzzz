@@ -22,10 +22,11 @@ model Tenant {
   roles     Role[]
   auditLogs AuditLog[]
 
-  contacts Contact[]
-  lists    List[]
-  tags     Tag[]
-  smtpConfig smtpConfig? 
+  contacts   Contact[]
+  lists      List[]
+  tags       Tag[]
+  smtpConfig smtpConfig?
+  templates  Template[]
 
   @@map("tenants")
 }
@@ -47,6 +48,7 @@ model User {
   emailVerifications EmailVerification[]
   passwordResets     PasswordReset[]
   refreshTokens      RefreshToken[]
+  templateVersions   TemplateVersion[]
 
   @@map("users")
 }
@@ -254,6 +256,55 @@ model smtpConfig {
   encryption        String    @default("TLS") @db.VarChar(50) // "SSL", "TLS", "none"
   verifiedAt        DateTime? @map("verified_at")
   createdAt         DateTime  @default(now()) @map("created_at")
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  @@map("smtp_configs") 
+  tenant            Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("smtp_configs")
+}
+
+model Template {
+  id          Int       @id @default(autoincrement())
+  tenantId    Int       @map("tenant_id")
+  name        String    @db.VarChar(255)
+  channelMode String    @default("email") @map("channel_mode") @db.VarChar(50) // email, whatsapp, telegram, multiple
+  category    String?   @db.VarChar(100) // promotion, newsletter, transactional, announcement
+  deletedAt   DateTime? @map("deleted_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  versions TemplateVersion[]
+
+  @@index([tenantId], map: "idx_templates_tenant")
+  @@map("templates")
+}
+
+model TemplateVersion {
+  id         Int @id @default(autoincrement())
+  templateId Int @map("template_id")
+  versionNo  Int @default(1) @map("version_no")
+
+  // konten multi saluran
+  subject         String? @db.VarChar(255) // subjek email
+  preheader       String? @db.VarChar(255) // preheader email
+  contentJson     Json?   @map("content_json") // menyimpan warna, logo dll
+  contentHtml     String? @map("content_html") @db.Text // hasil compile HTML / Raw HTML
+  contentWhatsapp String? @map("content_whatsapp") @db.Text // pesan teks WhatsApp
+  contentTelegram String? @map("content_telegram") @db.Text // pesan teks Telegram
+
+  // waba
+  language               String?   @default("id") @db.VarChar(20) // misal: id / en_US
+  metaTemplateId         String?   @map("meta_template_id") @db.VarChar(255) // ID template dari Meta
+  whatsappCategory       String?   @map("whatsapp_category") @db.VarChar(50) // Marketing / Utility / Authentication
+  whatsappApprovalStatus String?   @default("draft") @map("whatsapp_approval_status") @db.VarChar(50) // draft / approved / rejected
+  rejectedReason         String?   @map("rejected_reason") @db.Text // Alasan ditolak Meta
+  lastSyncAt             DateTime? @map("last_sync_at") // Waktu sinkronisasi status terakhir
+
+  createdById Int?     @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  template    Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  creator     User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([templateId, versionNo], map: "uq_template_version")
+  @@index([metaTemplateId], map: "idx_template_meta_id")
+  @@map("template_versions")
 }
