@@ -18,7 +18,7 @@ export const getTemplatesController = async (req: Request, res: Response) => {
 
     try {
         const  templates = await getTemplates(tenantId);
-        return res.status(200).json({ message: "Berhasil mengambil daftar tempalte", data: templates });
+        return res.status(200).json({ message: "Berhasil mengambil daftar template", data: templates });
     } catch (error) {
         console.error("[Get Templates Error]:", error);
         return res.status(500).json({ message: "Terjadi kesalahan internal" });
@@ -34,12 +34,12 @@ export const getTemplateByIdController  = async (req: Request, res: Response) =>
 
     const templateId = Number(req.params.id);
     if (isNaN(templateId)) {
-        return res.status(400).json({ message: "Id template tidak valid" });
+        return res.status(400).json({ message: "ID template tidak valid" });
     }
 
     try {
         const template = await getTemplateById(tenantId, templateId);
-        return res.status(200).json({ message: "Berhasil mengambil detail tempalte", data: template });
+        return res.status(200).json({ message: "Berhasil mengambil detail template", data: template });
     } catch (error: any) {
        if (error.message == "TEMPLATE_NOT_FOUND") {
            return res.status(404).json({ message: "Template tidak ditemukan" });
@@ -71,7 +71,7 @@ export const createTemplateController  = async (req: Request, res: Response) => 
         return res.status(201).json({ message: "Template berhasil dibuat", data: template, });
     } catch (error: any) {
         if (error.message == "TEMPLATE_NAME_DUPLICATE" ) {
-            return res.status(400).json({ message: "Nama template sudah digunakan" });
+            return res.status(409).json({ message: "Nama template sudah digunakan" });
         }
         console.error("[Create Template Error]:", error);
         return res.status(500).json({ message: "Terjadi kesalahan internal" });
@@ -100,14 +100,14 @@ export const updateTemplateController  = async (req: Request, res: Response) => 
 
     try {
         const updated = await updateTemplate(tenantId, actorId, templateId, parsed.data);
-        return res.status(200).json({ messages: "Template berhasil diperbarui", data: updated
+        return res.status(200).json({ message: "Template berhasil diperbarui", data: updated
         });
     } catch (error: any) {
         if (error.message === "TEMPLATE_NOT_FOUND") {
-            return res.status(404).json({ messages: "Template tidak ditemukan" });
+            return res.status(404).json({ message: "Template tidak ditemukan" });
         }
         if (error.message == "TEMPLATE_NAME_DUPLICATE") {
-            return res.status(400).json({ message: "Nama template sudah digunakan" });
+            return res.status(409).json({ message: "Nama template sudah digunakan" });
         }
         console.error("[Update Template Error]:", error);
         return res.status(500).json({ message: "Terjadi kesalahan internal" });

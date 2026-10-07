@@ -24,7 +24,7 @@ export const createTagController = async (req: Request, res: Response) => {
     const actorId = req.user?.userId;
 
     if (!tenantId || !actorId) {
-        return res.status(401).json({ message: "Akese tidak diizinkan"});
+        return res.status(401).json({ message: "Akses tidak diizinkan" });
     }
 
     const parsed = createTagSchema.safeParse(req.body);
@@ -40,7 +40,7 @@ export const createTagController = async (req: Request, res: Response) => {
         return res.status(201).json({ message: "Tag berhasil dibuat", data: newTag });
     } catch (error: any) {
         if (error.message === "TAG_DUPLICATE") {
-            return res.status(400).json({ message: "Nama tag sudah digunakan" });
+            return res.status(409).json({ message: "Nama tag sudah digunakan" });
         }
         console.error("[Create Tag Error]:", error);
         return res.status(500).json({ message: "Terjadi kesalahan internal" });

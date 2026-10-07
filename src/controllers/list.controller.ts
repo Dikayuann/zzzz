@@ -119,6 +119,10 @@ export const deleteListController = async (req: Request, res: Response) => {
     const listId = Number(req.params.id);
 
     if (!tenantId || !actorId) {
+        return res.status(401).json({ message: "Akses tidak diizinkan" });
+    }
+
+    if (isNaN(listId)) {
         return res.status(400).json({ message: "ID list tidak valid" });
     }
 
@@ -141,7 +145,7 @@ export const addContactsToListController = async (req: Request, res: Response) =
     const listId = Number(req.params.id);
 
     if (!tenantId || !actorId) {
-        return res.status(401).json({ message: "Akses tidak dizinkan" });
+        return res.status(401).json({ message: "Akses tidak diizinkan" });
     }
 
     if (isNaN(listId)) {
@@ -161,7 +165,7 @@ export const addContactsToListController = async (req: Request, res: Response) =
             return res.status(404).json({ message: "List tidak ditemukan" });
         }
         console.error("[Add Contacts To List Error]:", error);
-        return res.status(500).json({ message: "Terjadi kesalahan Internal" });
+        return res.status(500).json({ message: "Terjadi kesalahan internal" });
 
     }
 };

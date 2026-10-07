@@ -219,6 +219,9 @@ export const importContactsController = async (req: Request, res: Response) => {
         });
     } catch (error: any) {
         if (error.message === "INVALID_LIST") {
+            return res.status(400).json({ message: "List yang dipilih tidak ditemukan" });
+        }
+        if (error.message === "INVALID_TAGS") {
             return res.status(400).json({ message: "Satu atau lebih tag yang dipilih tidak valid" });
         }
         console.error("[Import Contacts Error]:", error);
