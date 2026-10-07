@@ -1,17 +1,41 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, useMemo } from "react";
 import type { TemplateChannel, ToolbarAction } from "@/types/template";
 import { TemplateEditorToolbar } from "./TemplateEditorToolbar";
 import {
   applyToolbarAction,
   insertTagAtCursor,
+  insertHtmlSnippetAtCursor,
+  isRawHtml,
+  extractTextBlocksFromHtml,
+  replaceTextInHtml,
+  type ExtractedTextBlock,
 } from "@/utils/templateParser";
+import {
+  highlightHtmlCode,
+  DEFAULT_GRAY_IMAGE_PLACEHOLDER,
+} from "@/utils/htmlHighlighter";
 import {
   MousePointerClick,
   Share2,
+  Code2,
+  FileText,
+  Image as ImageIcon,
+  Upload,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  Type,
+  Layout,
+  SlidersHorizontal,
+  Link2,
   Globe,
-  Camera,
-  MessageCircle,
+  ExternalLink,
+  Check,
+  Trash2,
+  X,
+  ArrowUpDown,
 } from "lucide-react";
+import { toast } from "sonner";
 
 interface TemplateEditorPanelProps {
   channel: TemplateChannel;
@@ -22,6 +46,20 @@ interface TemplateEditorPanelProps {
   content: string;
   onContentChange: (newContent: string) => void;
   onOpenMergeTagsModal: () => void;
+  // External ref hook to insert tag at cursor
+  onRegisterInsertTagHandler?: (handler: (tag: string, target?: "subject" | "preheader" | "content") => void) => void;
+  // Active target field tracking (subject | preheader | content)
+  activeTarget?: "subject" | "preheader" | "content";
+  onActiveTargetChange?: (target: "subject" | "preheader" | "content") => void;
+  // Custom Logo Props
+  enableLogo?: boolean;
+  onEnableLogoChange?: (val: boolean) => void;
+  logoUrl?: string;
+  onLogoUrlChange?: (val: string) => void;
+  logoWidth?: number;
+  onLogoWidthChange?: (val: number) => void;
+  logoAlign?: "left" | "center" | "right";
+  onLogoAlignChange?: (val: "left" | "center" | "right") => void;
   // Mailchimp CTA Button Props
   enableCta?: boolean;
   onEnableCtaChange?: (val: boolean) => void;
@@ -44,6 +82,9 @@ interface TemplateEditorPanelProps {
 
 const QUICK_MERGE_TAGS = [
   "{{first_name}}",
+  "{{nama}}",
+  "{{kode_promo}}",
+  "{{diskon}}",
   "{{org_name}}",
   "{{unsubscribe_link}}",
 ];
@@ -64,15 +105,30 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
   onPreheaderChange,
   content,
   onContentChange,
+  onOpenMergeTagsModal,
+  onRegisterInsertTagHandler,
+  activeTarget: activeTargetProp,
+  onActiveTargetChange,
+  // Logo
+  enableLogo = false,
+  onEnableLogoChange,
+  logoUrl = "",
+  onLogoUrlChange,
+  logoWidth = 140,
+  onLogoWidthChange,
+  logoAlign = "center",
+  onLogoAlignChange,
+  // CTA
   enableCta = false,
   onEnableCtaChange,
-  ctaText = "Klaim Voucher Sekarang 🚀",
+  ctaText = "Klaim Voucher Sekarang",
   onCtaTextChange,
   ctaUrl = "https://tokoonline.com/promo",
   onCtaUrlChange,
   ctaColor = "#4F46E5",
   onCtaColorChange,
-  enableSocial = true,
+  // Social
+  enableSocial = false,
   onEnableSocialChange,
   websiteUrl = "https://acmecorp.co",
   onWebsiteUrlChange,
@@ -81,7 +137,103 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
   whatsappUrl = "https://wa.me/6281234567890",
   onWhatsappUrlChange,
 }) => {
+  // Input references for smart cursor tag insertion
+  const subjectInputRef = useRef<HTMLInputElement>(null);
+  const preheaderInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const visualIframeRef = useRef<HTMLIFrameElement>(null);
+  const visualParentScrollRef = useRef<HTMLDivElement>(null);
+  const isIframeEditingRef = useRef(false);
+
+  // Exact selection positions saved across blur events
+  const subjectSelectionRef = useRef<{ start: number; end: number }>({
+    start: subject.length,
+    end: subject.length,
+  });
+  const preheaderSelectionRef = useRef<{ start: number; end: number }>({
+    start: preheader.length,
+    end: preheader.length,
+  });
+
+  // Track which input was last focused so tags insert into the active field!
+  const lastFocusedFieldRef = useRef<"subject" | "preheader" | "content">("subject");
+  const [activeTargetState, setActiveTargetState] = useState<"subject" | "preheader" | "content">("subject");
+  const currentActiveTarget = activeTargetProp !== undefined ? activeTargetProp : activeTargetState;
+
+  const setActiveTarget = (target: "subject" | "preheader" | "content") => {
+    setActiveTargetState(target);
+    onActiveTargetChange?.(target);
+    lastFocusedFieldRef.current = target;
+  };
+
+  const updateSubjectSelection = () => {
+    if (subjectInputRef.current) {
+      const start = subjectInputRef.current.selectionStart ?? subject.length;
+      const end = subjectInputRef.current.selectionEnd ?? subject.length;
+      subjectSelectionRef.current = { start, end };
+    }
+  };
+
+  const updatePreheaderSelection = () => {
+    if (preheaderInputRef.current) {
+      const start = preheaderInputRef.current.selectionStart ?? preheader.length;
+      const end = preheaderInputRef.current.selectionEnd ?? preheader.length;
+      preheaderSelectionRef.current = { start, end };
+    }
+  };
+
+  // Editor mode: Visual (Format Teks) vs Raw HTML Code
+  const [editorMode, setEditorMode] = useState<"visual" | "html">(
+    isRawHtml(content) ? "visual" : "visual"
+  );
+
+  // Sub-view inside Visual mode for HTML emails: "canvas" (WYSIWYG) vs "fields" (Daftar Teks Form)
+  const [visualSubView, setVisualSubView] = useState<"canvas" | "fields">("canvas");
+
+  // Canva-Style Interactive Link Editing State
+  interface ActiveLinkData {
+    element: HTMLAnchorElement | null;
+    range: Range | null;
+    text: string;
+    url: string;
+    isExisting: boolean;
+  }
+  const [activeLinkData, setActiveLinkData] = useState<ActiveLinkData | null>(null);
+  const [linkUrlInput, setLinkUrlInput] = useState("");
+
+  // Interactive Image Editing State
+  interface ActiveImageData {
+    element: HTMLImageElement | null;
+    src: string;
+    alt: string;
+    width: string;
+    align: "left" | "center" | "right";
+    originalHtml?: string;
+  }
+  const [activeImageData, setActiveImageData] = useState<ActiveImageData | null>(null);
+  const [imageSrcInput, setImageSrcInput] = useState("");
+  const [imageAltInput, setImageAltInput] = useState("");
+  const [imageWidthInput, setImageWidthInput] = useState("280px");
+  const [imageAlignInput, setImageAlignInput] = useState<"left" | "center" | "right">("center");
+  const imageUploadInputRef = useRef<HTMLInputElement>(null);
+  const codePreRef = useRef<HTMLPreElement>(null);
+
+  // Adjustable Editor Height (Panjang / Tinggi Editor)
+  const [editorHeight, setEditorHeight] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem("campaignblast_editor_height");
+      if (saved) return parseInt(saved, 10) || 640;
+    } catch {}
+    return 640; // Default: spacious 640px height
+  });
+
+  const handleSetEditorHeight = (h: number) => {
+    setEditorHeight(h);
+    try {
+      localStorage.setItem("campaignblast_editor_height", String(h));
+    } catch {}
+  };
 
   // Undo / Redo History Management
   const [history, setHistory] = useState<string[]>([content]);
@@ -89,8 +241,21 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
   const isUndoRedoAction = useRef(false);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Mailchimp Preheader accordion toggle
-  const [showPreheaderInput, setShowPreheaderInput] = useState(false);
+  // Optional Preheader accordion toggle
+  const [showPreheaderInput, setShowPreheaderInput] = useState(Boolean(preheader));
+
+  // Extract all text strings whenever content has HTML
+  const extractedTextBlocks: ExtractedTextBlock[] = useMemo(() => {
+    if (isRawHtml(content)) {
+      return extractTextBlocksFromHtml(content);
+    }
+    return [];
+  }, [content]);
+
+  // Memoize syntax highlighted HTML to prevent heavy regex recalculations on re-render
+  const highlightedHtml = useMemo(() => {
+    return highlightHtmlCode(content || "<!-- Tulis kode HTML Email Anda di sini -->") + "\n";
+  }, [content]);
 
   const pushToHistory = (newVal: string) => {
     if (newVal === history[historyIndex]) return;
@@ -123,6 +288,322 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
     }
   };
 
+  const handleOpenVisualLinkEditor = () => {
+    const iframe = visualIframeRef.current;
+    if (!iframe) return;
+    const win = iframe.contentWindow;
+    const doc = iframe.contentDocument || win?.document;
+    if (!win || !doc) return;
+
+    const sel = win.getSelection();
+    let selectedText = sel ? sel.toString().trim() : "";
+    let targetRange: Range | null = null;
+    let existingLinkEl: HTMLAnchorElement | null = null;
+
+    if (sel && sel.rangeCount > 0) {
+      targetRange = sel.getRangeAt(0);
+      const node = targetRange.commonAncestorContainer;
+      existingLinkEl = (node instanceof HTMLElement ? node.closest("a") : node.parentElement?.closest("a")) as HTMLAnchorElement | null;
+    }
+
+    if (existingLinkEl) {
+      const currentHref = existingLinkEl.getAttribute("href") || "";
+      const text = (existingLinkEl.innerText || existingLinkEl.textContent || "").trim() || "Tautan";
+      setActiveLinkData({
+        element: existingLinkEl,
+        range: null,
+        text,
+        url: currentHref,
+        isExisting: true,
+      });
+      setLinkUrlInput(currentHref);
+    } else if (selectedText) {
+      setActiveLinkData({
+        element: null,
+        range: targetRange,
+        text: selectedText,
+        url: "https://",
+        isExisting: false,
+      });
+      setLinkUrlInput("https://");
+    } else {
+      setActiveLinkData({
+        element: null,
+        range: targetRange,
+        text: "Kunjungi Tautan",
+        url: "https://",
+        isExisting: false,
+      });
+      setLinkUrlInput("https://");
+    }
+  };
+
+  const handleApplyLink = () => {
+    if (!activeLinkData) return;
+    const targetUrl = linkUrlInput.trim() || "#";
+    const iframe = visualIframeRef.current;
+    const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
+    if (!doc) return;
+
+    if (activeLinkData.element) {
+      activeLinkData.element.setAttribute("href", targetUrl);
+      activeLinkData.element.setAttribute("target", "_blank");
+      activeLinkData.element.setAttribute("rel", "noopener noreferrer");
+    } else if (activeLinkData.range && activeLinkData.range.toString().trim()) {
+      try {
+        const newA = doc.createElement("a");
+        newA.href = targetUrl;
+        newA.target = "_blank";
+        newA.rel = "noopener noreferrer";
+        newA.style.color = "#2563eb";
+        newA.style.textDecoration = "underline";
+        activeLinkData.range.surroundContents(newA);
+      } catch {
+        doc.execCommand("createLink", false, targetUrl);
+      }
+    } else {
+      const newA = doc.createElement("a");
+      newA.href = targetUrl;
+      newA.target = "_blank";
+      newA.rel = "noopener noreferrer";
+      newA.style.color = "#2563eb";
+      newA.style.textDecoration = "underline";
+      newA.textContent = activeLinkData.text || targetUrl;
+      if (activeLinkData.range) {
+        activeLinkData.range.insertNode(newA);
+      } else {
+        doc.body.appendChild(newA);
+      }
+    }
+
+    isIframeEditingRef.current = true;
+    const updated = doc.body.innerHTML;
+    pushToHistory(updated);
+    onContentChange(updated);
+    setActiveLinkData(null);
+    toast.success("Tautan berhasil diterapkan!");
+  };
+
+  const handleRemoveLink = () => {
+    if (!activeLinkData?.element) return;
+    const doc = visualIframeRef.current?.contentDocument || visualIframeRef.current?.contentWindow?.document;
+    if (!doc) return;
+
+    const el = activeLinkData.element;
+    const parent = el.parentNode;
+    if (parent) {
+      while (el.firstChild) {
+        parent.insertBefore(el.firstChild, el);
+      }
+      parent.removeChild(el);
+    }
+
+    isIframeEditingRef.current = true;
+    const updated = doc.body.innerHTML;
+    pushToHistory(updated);
+    onContentChange(updated);
+    setActiveLinkData(null);
+    toast.info("Tautan berhasil dihapus.");
+  };
+
+  // Live real-time preview update for image styling, dimensions, source, and alignment
+  const applyImageLiveUpdate = (updates: {
+    src?: string;
+    alt?: string;
+    width?: string;
+    align?: "left" | "center" | "right";
+  }) => {
+    if (!activeImageData?.element) return;
+    const doc =
+      visualIframeRef.current?.contentDocument ||
+      visualIframeRef.current?.contentWindow?.document;
+    if (!doc) return;
+
+    const el = activeImageData.element;
+
+    if (updates.src !== undefined) {
+      const trimmed = updates.src.trim();
+      if (trimmed) {
+        el.setAttribute("src", trimmed);
+      }
+      setImageSrcInput(updates.src);
+    }
+
+    if (updates.alt !== undefined) {
+      const trimmed = updates.alt.trim();
+      if (trimmed) {
+        el.setAttribute("alt", trimmed);
+      } else {
+        el.removeAttribute("alt");
+      }
+      setImageAltInput(updates.alt);
+    }
+
+    if (updates.width !== undefined) {
+      const w = updates.width.trim();
+      if (w) {
+        const formatted =
+          w.includes("%") || w.endsWith("px") ? w : `${w}px`;
+        el.style.width = formatted;
+        el.style.maxWidth = "100%";
+        el.style.height = "auto";
+        el.setAttribute("width", formatted);
+      }
+      setImageWidthInput(updates.width);
+    }
+
+    if (updates.align !== undefined) {
+      const parent = el.parentElement;
+      if (
+        parent &&
+        (parent.tagName === "DIV" || parent.tagName === "P" || parent.tagName === "TD")
+      ) {
+        parent.style.textAlign = updates.align;
+      }
+      el.style.display = updates.align === "center" ? "inline-block" : "block";
+      if (updates.align === "center") {
+        el.style.margin = "0 auto";
+      } else if (updates.align === "right") {
+        el.style.marginLeft = "auto";
+        el.style.marginRight = "0";
+      } else {
+        el.style.marginLeft = "0";
+        el.style.marginRight = "auto";
+      }
+      setImageAlignInput(updates.align);
+    }
+
+    // Direct synchronous update to iframe and propagate to parent live preview instantly
+    isIframeEditingRef.current = true;
+    const updated = doc.body.innerHTML;
+    onContentChange(updated);
+  };
+
+  const handleCancelImageEdit = () => {
+    if (activeImageData?.originalHtml) {
+      const doc =
+        visualIframeRef.current?.contentDocument ||
+        visualIframeRef.current?.contentWindow?.document;
+      if (doc) {
+        doc.body.innerHTML = activeImageData.originalHtml;
+        isIframeEditingRef.current = true;
+        onContentChange(activeImageData.originalHtml);
+      }
+    }
+    setActiveImageData(null);
+  };
+
+  const handleApplyImage = () => {
+    if (!activeImageData?.element) {
+      setActiveImageData(null);
+      return;
+    }
+    const doc =
+      visualIframeRef.current?.contentDocument ||
+      visualIframeRef.current?.contentWindow?.document;
+    if (!doc) {
+      setActiveImageData(null);
+      return;
+    }
+
+    applyImageLiveUpdate({
+      src: imageSrcInput,
+      alt: imageAltInput,
+      width: imageWidthInput,
+      align: imageAlignInput,
+    });
+
+    isIframeEditingRef.current = true;
+    const updated = doc.body.innerHTML;
+    pushToHistory(updated);
+    onContentChange(updated);
+    setActiveImageData(null);
+    toast.success("Pengaturan gambar berhasil disimpan!");
+  };
+
+  const handleRemoveImage = () => {
+    if (!activeImageData?.element) return;
+    const doc =
+      visualIframeRef.current?.contentDocument ||
+      visualIframeRef.current?.contentWindow?.document;
+    if (!doc) return;
+
+    const el = activeImageData.element;
+    const parent = el.parentNode;
+    if (parent) {
+      parent.removeChild(el);
+    }
+
+    isIframeEditingRef.current = true;
+    const updated = doc.body.innerHTML;
+    pushToHistory(updated);
+    onContentChange(updated);
+    setActiveImageData(null);
+    toast.info("Gambar berhasil dihapus.");
+  };
+
+  const handleUploadImageInModal = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Pilih file gambar valid (PNG, JPG, SVG, WebP)");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (uploadEvent) => {
+      const dataUrl = uploadEvent.target?.result as string;
+      if (dataUrl) {
+        setImageSrcInput(dataUrl);
+        applyImageLiveUpdate({ src: dataUrl });
+        toast.success("Gambar berhasil dimuat dan langsung diperbarui!");
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleInsertVisualImagePlaceholder = () => {
+    const iframe = visualIframeRef.current;
+    if (!iframe) return;
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!doc) return;
+
+    const placeholderHtml = `\n<div style="text-align: center; margin: 20px 0;">\n  <img src="${DEFAULT_GRAY_IMAGE_PLACEHOLDER}" alt="Placeholder Gambar" style="max-width: 100%; width: 440px; height: auto; border-radius: 10px; display: inline-block; border: 1.5px dashed #cbd5e1; cursor: pointer;" />\n</div>\n`;
+
+    const sel = iframe.contentWindow?.getSelection();
+    if (sel && sel.rangeCount > 0 && sel.focusNode) {
+      try {
+        const range = sel.getRangeAt(0);
+        range.deleteContents();
+        const tempDiv = doc.createElement("div");
+        tempDiv.innerHTML = placeholderHtml;
+        const node = tempDiv.firstElementChild || tempDiv;
+        range.insertNode(node);
+        isIframeEditingRef.current = true;
+        const updated = doc.body.innerHTML;
+        pushToHistory(updated);
+        onContentChange(updated);
+        toast.info("Placeholder abu-abu disisipkan. Klik gambar untuk mengatur gambar atau logo.");
+        return;
+      } catch {
+        // fallback
+      }
+    }
+
+    doc.body.insertAdjacentHTML("beforeend", placeholderHtml);
+    isIframeEditingRef.current = true;
+    const updated = doc.body.innerHTML;
+    pushToHistory(updated);
+    onContentChange(updated);
+    toast.info("Placeholder abu-abu disisipkan. Klik gambar untuk mengatur gambar atau logo.");
+  };
+
+  const handleCodeScroll = (e: React.UIEvent<HTMLTextAreaElement>) => {
+    if (codePreRef.current) {
+      codePreRef.current.scrollTop = e.currentTarget.scrollTop;
+      codePreRef.current.scrollLeft = e.currentTarget.scrollLeft;
+    }
+  };
+
   const handleToolbarAction = (action: ToolbarAction) => {
     if (action === "undo") {
       handleUndo();
@@ -130,6 +611,12 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
     }
     if (action === "redo") {
       handleRedo();
+      return;
+    }
+
+    // Intercept link action when in visual canvas mode
+    if (action === "link" && editorMode === "visual" && contentIsHtml && visualSubView === "canvas") {
+      handleOpenVisualLinkEditor();
       return;
     }
 
@@ -141,13 +628,129 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
     }
   };
 
-  const handleInsertTag = (tag: string) => {
-    const updated = insertTagAtCursor(textareaRef.current, content, tag);
+  // Dedicated Tag Insertion for Subject Line
+  const handleInsertSubjectTag = (tag: string) => {
+    const formattedTag = tag.startsWith("{{") ? tag : `{{${tag}}}`;
+    const input = subjectInputRef.current;
+    const start = input?.selectionStart ?? subjectSelectionRef.current.start ?? subject.length;
+    const end = input?.selectionEnd ?? subjectSelectionRef.current.end ?? subject.length;
+    const newSubject = subject.substring(0, start) + formattedTag + subject.substring(end);
+    onSubjectChange(newSubject);
+    const newPos = start + formattedTag.length;
+    subjectSelectionRef.current = { start: newPos, end: newPos };
+    setActiveTarget("subject");
+    setTimeout(() => {
+      if (input) {
+        input.focus();
+        input.setSelectionRange(newPos, newPos);
+      }
+    }, 10);
+  };
+
+  // Dedicated Tag Insertion for Preheader
+  const handleInsertPreheaderTag = (tag: string) => {
+    if (!onPreheaderChange) return;
+    const formattedTag = tag.startsWith("{{") ? tag : `{{${tag}}}`;
+    const input = preheaderInputRef.current;
+    const start = input?.selectionStart ?? preheaderSelectionRef.current.start ?? preheader.length;
+    const end = input?.selectionEnd ?? preheaderSelectionRef.current.end ?? preheader.length;
+    const newPreheader = preheader.substring(0, start) + formattedTag + preheader.substring(end);
+    onPreheaderChange(newPreheader);
+    const newPos = start + formattedTag.length;
+    preheaderSelectionRef.current = { start: newPos, end: newPos };
+    setActiveTarget("preheader");
+    setTimeout(() => {
+      if (input) {
+        input.focus();
+        input.setSelectionRange(newPos, newPos);
+      }
+    }, 10);
+  };
+
+  // Dedicated Tag Insertion for Body Content
+  const handleInsertContentTag = (tag: string) => {
+    const formattedTag = tag.startsWith("{{") ? tag : `{{${tag}}}`;
+    setActiveTarget("content");
+
+    // If in visual iframe mode and user has a selection inside iframe
+    if (editorMode === "visual" && contentIsHtml && visualSubView === "canvas") {
+      const iframeWin = visualIframeRef.current?.contentWindow;
+      if (iframeWin) {
+        const sel = iframeWin.getSelection();
+        if (sel && sel.rangeCount > 0 && sel.focusNode) {
+          try {
+            const range = sel.getRangeAt(0);
+            range.deleteContents();
+            const textNode = iframeWin.document.createTextNode(formattedTag);
+            range.insertNode(textNode);
+            range.setStartAfter(textNode);
+            range.setEndAfter(textNode);
+            sel.removeAllRanges();
+            sel.addRange(range);
+            isIframeEditingRef.current = true;
+            const updated = iframeWin.document.body.innerHTML;
+            pushToHistory(updated);
+            onContentChange(updated);
+            return;
+          } catch {
+            // fallback
+          }
+        }
+      }
+      const updated = `${content} ${formattedTag}`;
+      pushToHistory(updated);
+      onContentChange(updated);
+      return;
+    }
+
+    if (editorMode === "html" || !isRawHtml(content)) {
+      const updated = insertTagAtCursor(textareaRef.current, content, formattedTag);
+      if (updated !== content) {
+        pushToHistory(updated);
+        onContentChange(updated);
+      }
+    } else {
+      const updated = `${content} ${formattedTag}`;
+      pushToHistory(updated);
+      onContentChange(updated);
+    }
+  };
+
+  // Smart tag insertion: Routes to target field based on active focus or explicit override
+  const handleInsertTag = (tag: string, targetOverride?: "subject" | "preheader" | "content") => {
+    const target = targetOverride || currentActiveTarget || lastFocusedFieldRef.current;
+    if (target === "subject") {
+      handleInsertSubjectTag(tag);
+      return;
+    }
+    if (target === "preheader") {
+      handleInsertPreheaderTag(tag);
+      return;
+    }
+    handleInsertContentTag(tag);
+  };
+
+  const handleInsertHtmlSnippet = (snippet: string) => {
+    const updated = insertHtmlSnippetAtCursor(textareaRef.current, content, snippet);
     if (updated !== content) {
       pushToHistory(updated);
       onContentChange(updated);
     }
   };
+
+  // Insert Logo Snippet at cursor
+  const handleInsertLogoSnippet = () => {
+    const src = logoUrl || "https://dummyimage.com/280x80/4f46e5/ffffff&text=LOGO";
+    const snippet = `<div style="text-align: ${logoAlign}; margin: 20px 0;"><img src="${src}" alt="Logo" style="max-width: ${logoWidth}px; height: auto; display: inline-block;" /></div>`;
+    handleInsertHtmlSnippet(snippet);
+  };
+
+  // Expose insert tag handler to parent (e.g. for MergeTagsModal)
+  useEffect(() => {
+    if (onRegisterInsertTagHandler) {
+      onRegisterInsertTagHandler(handleInsertTag);
+    }
+  }, [onRegisterInsertTagHandler, content, subject, preheader, currentActiveTarget]);
 
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newVal = e.target.value;
@@ -163,7 +766,199 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
     }
     debounceTimerRef.current = setTimeout(() => {
       pushToHistory(newVal);
-    }, 450);
+    }, 400);
+  };
+
+  // Handler: Change a detected text node inside the HTML
+  const handleUpdateExtractedText = (originalText: string, newText: string) => {
+    if (originalText === newText) return;
+    const updated = replaceTextInHtml(content, originalText, newText);
+    if (updated !== content) {
+      pushToHistory(updated);
+      onContentChange(updated);
+    }
+  };
+
+  // In-place Visual HTML Iframe Editor synchronization
+  useEffect(() => {
+    if (editorMode !== "visual" || !isRawHtml(content)) return;
+
+    // Prevent rebuilding the iframe DOM when typing directly inside it!
+    // This fixes the jumping / scrolling to the top issue!
+    if (isIframeEditingRef.current) {
+      isIframeEditingRef.current = false;
+      return;
+    }
+
+    const iframe = visualIframeRef.current;
+    if (!iframe) return;
+
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!doc) return;
+
+    const win = iframe.contentWindow;
+    const prevScrollX = win ? win.scrollX : 0;
+    const prevScrollY = win ? win.scrollY : 0;
+    const parentContainer = visualParentScrollRef.current;
+    const parentScrollTop = parentContainer ? parentContainer.scrollTop : 0;
+
+    const editableHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          html, body {
+            scroll-behavior: auto !important;
+          }
+          body {
+            margin: 0;
+            padding: 18px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            color: #1e293b;
+            line-height: 1.5;
+            outline: none;
+            min-height: 380px;
+          }
+          [contenteditable="true"] *:hover {
+            outline: 1.5px dashed #94a3b8 !important;
+            outline-offset: 2px;
+            cursor: text;
+          }
+          [contenteditable="true"] *:focus {
+            outline: 1.5px solid #0f172a !important;
+            outline-offset: 2px;
+          }
+          a, [role="button"] {
+            cursor: pointer !important;
+          }
+          a:hover {
+            outline: 1.5px solid #2563eb !important;
+            outline-offset: 2px !important;
+          }
+          img {
+            cursor: pointer !important;
+            transition: outline 0.15s ease-in-out;
+          }
+          img:hover {
+            outline: 2px dashed #0284c7 !important;
+            outline-offset: 2px !important;
+          }
+        </style>
+      </head>
+      <body contenteditable="true">
+        ${content}
+      </body>
+      </html>
+    `;
+
+    doc.open();
+    doc.write(editableHtml);
+    doc.close();
+
+    // Restore scroll positions so it never jumps to the top
+    if (win && (prevScrollX > 0 || prevScrollY > 0)) {
+      win.scrollTo(prevScrollX, prevScrollY);
+    }
+    if (parentContainer && parentScrollTop > 0) {
+      parentContainer.scrollTop = parentScrollTop;
+    }
+
+    const handleInput = () => {
+      if (doc.body) {
+        isIframeEditingRef.current = true;
+        const updatedHtml = doc.body.innerHTML;
+        onContentChange(updatedHtml);
+      }
+    };
+
+    const handleFocus = () => {
+      setActiveTarget("content");
+    };
+
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+
+      // 1. Intercept Image Click (for resize, custom image/logo, alignment)
+      const imgEl = target.closest("img") as HTMLImageElement | null;
+      if (imgEl) {
+        e.preventDefault();
+        e.stopPropagation();
+        const currentSrc = imgEl.getAttribute("src") || "";
+        const currentAlt = imgEl.getAttribute("alt") || "";
+        const currentWidth =
+          imgEl.style.width || imgEl.getAttribute("width") || imgEl.style.maxWidth || "280px";
+        let currentAlign: "left" | "center" | "right" = "center";
+        const parent = imgEl.parentElement;
+        if (parent && parent.style.textAlign) {
+          currentAlign = (parent.style.textAlign as any) || "center";
+        }
+        setActiveImageData({
+          element: imgEl,
+          src: currentSrc,
+          alt: currentAlt,
+          width: currentWidth,
+          align: currentAlign,
+          originalHtml: doc.body.innerHTML,
+        });
+        setImageSrcInput(currentSrc);
+        setImageAltInput(currentAlt);
+        setImageWidthInput(currentWidth || "280px");
+        setImageAlignInput(currentAlign);
+        setActiveLinkData(null);
+        return;
+      }
+
+      // 2. Intercept Anchor Link Click
+      const linkEl = target.closest("a") as HTMLAnchorElement | null;
+      if (linkEl) {
+        e.preventDefault();
+        e.stopPropagation();
+        const currentHref = linkEl.getAttribute("href") || "";
+        const linkText = (linkEl.innerText || linkEl.textContent || "").trim() || "Tombol / Tautan";
+        setActiveLinkData({
+          element: linkEl,
+          range: null,
+          text: linkText,
+          url: currentHref,
+          isExisting: true,
+        });
+        setLinkUrlInput(currentHref);
+        setActiveImageData(null);
+        return;
+      }
+    };
+
+    doc.body.addEventListener("input", handleInput);
+    doc.body.addEventListener("focus", handleFocus);
+    doc.body.addEventListener("click", handleClick);
+
+    return () => {
+      doc.body?.removeEventListener("input", handleInput);
+      doc.body?.removeEventListener("focus", handleFocus);
+      doc.body?.removeEventListener("click", handleClick);
+    };
+  }, [content, editorMode, visualSubView]);
+
+  // Handle Logo file upload from user's computer
+  const handleLogoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      alert("Harap pilih file gambar (PNG, JPG, SVG)");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (uploadEvent) => {
+      const dataUrl = uploadEvent.target?.result as string;
+      if (dataUrl) {
+        onLogoUrlChange?.(dataUrl);
+        onEnableLogoChange?.(true);
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -191,129 +986,1059 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
   const canUndo = historyIndex > 0;
   const canRedo = historyIndex < history.length - 1;
 
+  const contentIsHtml = isRawHtml(content);
+
   return (
     <div className="space-y-4">
-      {/* SECTION TITLE: EDITOR */}
-      <h2 className="text-[11px] font-bold tracking-wider text-slate-400 uppercase">
-        EDITOR
-      </h2>
-
-      {/* EMAIL HEADER & PREHEADER (Only for Email) */}
+      {/* 1. EMAIL SUBJECT & PREHEADER INPUTS */}
       {channel === "email" && (
-        <div className="space-y-2">
-          {/* Subject Line */}
+        <div className="space-y-2.5">
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-slate-700">
-                Subject line
+              <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                <span>Subjek Email</span>
+                {currentActiveTarget === "subject" && (
+                  <span className="text-[10px] text-slate-600 bg-slate-100 font-medium px-1.5 py-0.5 rounded border border-slate-200">
+                    Target aktif
+                  </span>
+                )}
               </label>
               <button
                 type="button"
                 onClick={() => setShowPreheaderInput(!showPreheaderInput)}
-                className="text-[11px] text-indigo-600 hover:text-indigo-800 font-medium transition cursor-pointer"
+                className="text-[11px] text-slate-600 hover:text-slate-900 font-medium transition cursor-pointer"
               >
-                {showPreheaderInput ? "- Sembunyikan Preheader" : "+ Tambah Preheader"}
+                {showPreheaderInput ? "Sembunyikan Preheader" : "Tambah Preheader"}
               </button>
             </div>
             <input
+              ref={subjectInputRef}
               type="text"
               value={subject}
-              onChange={(e) => onSubjectChange(e.target.value)}
-              placeholder="Subjek email..."
-              className="w-full h-10 px-3.5 rounded-xl border border-slate-200/90 bg-white text-xs text-slate-900 focus:outline-none focus:border-indigo-500 shadow-2xs transition"
+              onFocus={() => {
+                setActiveTarget("subject");
+                updateSubjectSelection();
+              }}
+              onClick={() => {
+                setActiveTarget("subject");
+                updateSubjectSelection();
+              }}
+              onSelect={() => {
+                setActiveTarget("subject");
+                updateSubjectSelection();
+              }}
+              onKeyUp={() => {
+                setActiveTarget("subject");
+                updateSubjectSelection();
+              }}
+              onChange={(e) => {
+                onSubjectChange(e.target.value);
+                const pos = e.target.selectionStart ?? e.target.value.length;
+                subjectSelectionRef.current = { start: pos, end: pos };
+              }}
+              placeholder="Contoh: Spesial untuk {{first_name}}: Penawaran terbatas hari ini"
+              className={`w-full h-10 px-3.5 rounded-xl border bg-white text-xs text-slate-900 focus:outline-none shadow-2xs transition ${
+                currentActiveTarget === "subject"
+                  ? "border-slate-800 ring-1 ring-slate-800"
+                  : "border-slate-200/90"
+              }`}
             />
+
+            {/* Quick Merge Tags for Subject Line */}
+            <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+              <span className="text-[10px] font-semibold text-slate-400">
+                Sisipkan ke Subjek:
+              </span>
+              {["{{first_name}}", "{{nama}}", "{{kode_promo}}", "{{diskon}}", "{{org_name}}"].map((tag) => (
+                <button
+                  key={tag}
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleInsertSubjectTag(tag)}
+                  className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 font-mono text-[11px] font-medium transition cursor-pointer active:scale-95"
+                  title={`Sisipkan ${tag} langsung ke Subjek Email`}
+                >
+                  {tag}
+                </button>
+              ))}
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setActiveTarget("subject");
+                  onOpenMergeTagsModal();
+                }}
+                className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-semibold transition cursor-pointer"
+                title="Buka pustaka merge tag lengkap untuk subjek"
+              >
+                Tag Lain...
+              </button>
+            </div>
           </div>
 
-          {/* Optional Preheader */}
           {showPreheaderInput && onPreheaderChange && (
-            <div className="space-y-1 animate-in fade-in-50 duration-150">
-              <label className="text-[11px] font-medium text-slate-500">
-                Preheader (Teks pratinjau cuplikan di inbox penerima)
-              </label>
+            <div className="space-y-1.5 animate-in fade-in-50 duration-150">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-medium text-slate-500 flex items-center gap-1.5">
+                  <span>Preheader (Teks cuplikan inbox sebelum email dibuka)</span>
+                  {currentActiveTarget === "preheader" && (
+                    <span className="text-[10px] text-slate-600 bg-slate-100 font-medium px-1.5 py-0.5 rounded border border-slate-200">
+                      Target aktif
+                    </span>
+                  )}
+                </label>
+              </div>
               <input
+                ref={preheaderInputRef}
                 type="text"
                 value={preheader}
-                onChange={(e) => onPreheaderChange(e.target.value)}
-                placeholder="Contoh: Dapatkan diskon 30% dan pembaruan sistem bulan ini..."
-                className="w-full h-8 px-3 rounded-lg border border-slate-200 bg-slate-50/50 text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
+                onFocus={() => {
+                  setActiveTarget("preheader");
+                  updatePreheaderSelection();
+                }}
+                onClick={() => {
+                  setActiveTarget("preheader");
+                  updatePreheaderSelection();
+                }}
+                onSelect={() => {
+                  setActiveTarget("preheader");
+                  updatePreheaderSelection();
+                }}
+                onKeyUp={() => {
+                  setActiveTarget("preheader");
+                  updatePreheaderSelection();
+                }}
+                onChange={(e) => {
+                  onPreheaderChange(e.target.value);
+                  const pos = e.target.selectionStart ?? e.target.value.length;
+                  preheaderSelectionRef.current = { start: pos, end: pos };
+                }}
+                placeholder="Contoh: Gunakan kode promo {{kode_promo}} sebelum {{tanggal_kadaluarsa}}..."
+                className={`w-full h-8 px-3 rounded-lg border bg-slate-50/50 text-xs text-slate-800 focus:outline-none transition ${
+                  currentActiveTarget === "preheader"
+                    ? "border-slate-800 ring-1 ring-slate-800 bg-white"
+                    : "border-slate-200"
+                }`}
               />
+
+              {/* Quick Merge Tags for Preheader */}
+              <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                <span className="text-[10px] font-semibold text-slate-400">
+                  Sisipkan ke Preheader:
+                </span>
+                {["{{first_name}}", "{{kode_promo}}", "{{tanggal_kadaluarsa}}"].map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => handleInsertPreheaderTag(tag)}
+                    className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 font-mono text-[11px] font-medium transition cursor-pointer active:scale-95"
+                    title={`Sisipkan ${tag} langsung ke Preheader`}
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>
       )}
 
-      {/* RICH EDITOR CONTAINER */}
-      <div className="rounded-2xl border border-slate-200/90 bg-white shadow-2xs overflow-hidden flex flex-col focus-within:border-indigo-400 transition">
-        {/* Toolbar with Undo / Redo & Channel-aware syntax */}
+      {/* 2. RICH EDITOR CONTAINER WITH DUAL MODE */}
+      <div className="rounded-2xl border border-slate-200/90 bg-white shadow-2xs overflow-hidden flex flex-col focus-within:border-slate-400 transition">
+        {/* Unified Mode Switcher Tabs */}
+        <div className="px-4 py-2 border-b border-slate-100 bg-white flex flex-wrap items-center justify-between gap-2">
+          <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200/80 text-xs">
+            {contentIsHtml ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditorMode("visual");
+                    setVisualSubView("canvas");
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                    editorMode === "visual" && visualSubView === "canvas"
+                      ? "bg-white text-slate-900 shadow-2xs font-semibold"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                  title="Edit langsung pada kanvas visual email"
+                >
+                  <Layout className="h-3.5 w-3.5 text-slate-600" />
+                  <span>Kanvas Visual</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditorMode("visual");
+                    setVisualSubView("fields");
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                    editorMode === "visual" && visualSubView === "fields"
+                      ? "bg-white text-slate-900 shadow-2xs font-semibold"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                  title="Edit teks melalui formulir terdeteksi"
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5 text-slate-600" />
+                  <span>Formulir Teks ({extractedTextBlocks.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setEditorMode("html")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                    editorMode === "html"
+                      ? "bg-white text-slate-900 shadow-2xs font-semibold"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                  title="Lihat atau edit kode HTML mentah"
+                >
+                  <Code2 className="h-3.5 w-3.5 text-slate-600" />
+                  <span>Kode HTML</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setEditorMode("visual")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                    editorMode === "visual"
+                      ? "bg-white text-slate-900 shadow-2xs font-semibold"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <FileText className="h-3.5 w-3.5 text-slate-600" />
+                  <span>Editor Teks</span>
+                </button>
+
+                {channel === "email" && (
+                  <button
+                    type="button"
+                    onClick={() => setEditorMode("html")}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                      editorMode === "html"
+                        ? "bg-white text-slate-900 shadow-2xs font-semibold"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    <Code2 className="h-3.5 w-3.5 text-slate-600" />
+                    <span>Kode HTML</span>
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {enableLogo && logoUrl && (
+              <button
+                type="button"
+                onClick={handleInsertLogoSnippet}
+                className="text-[11px] font-medium text-slate-600 hover:text-slate-900 transition cursor-pointer flex items-center gap-1 bg-slate-50 hover:bg-slate-100 border border-slate-200 px-2 py-1 rounded-md"
+                title="Sisipkan logo di posisi kursor"
+              >
+                <ImageIcon className="h-3 w-3 text-slate-500" />
+                <span>Sisipkan Logo</span>
+              </button>
+            )}
+            <span className="text-[11px] text-slate-400 font-mono hidden sm:inline">
+              {editorMode === "html"
+                ? "Mode HTML"
+                : contentIsHtml
+                ? visualSubView === "canvas"
+                  ? "Kanvas Visual"
+                  : "Formulir Teks"
+                : "Teks Biasa"}
+            </span>
+
+            {/* Quick Height Expand Toggle Button */}
+            <button
+              type="button"
+              onClick={() =>
+                handleSetEditorHeight(
+                  editorHeight >= 850 ? 500 : editorHeight === 500 ? 680 : 880
+                )
+              }
+              className="text-[11px] font-medium text-slate-700 hover:text-slate-900 transition cursor-pointer flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200/80 px-2.5 py-1 rounded-lg border border-slate-200/80 shadow-2xs whitespace-nowrap"
+              title="Perpanjang atau atur tinggi area kerja editor"
+            >
+              <ArrowUpDown className="h-3 w-3 text-slate-500" />
+              <span>
+                {editorHeight >= 850
+                  ? "Tinggi: Ekstra (880px)"
+                  : editorHeight >= 640
+                  ? "Tinggi: Panjang (680px)"
+                  : "Tinggi: Sedang (500px)"}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* Dynamic Toolbar */}
         <TemplateEditorToolbar
           onAction={handleToolbarAction}
           canUndo={canUndo}
           canRedo={canRedo}
           channel={channel}
+          editorMode={editorMode}
+          onInsertHtmlSnippet={handleInsertHtmlSnippet}
         />
 
-        {/* Textarea */}
-        <textarea
-          ref={textareaRef}
-          value={content}
-          onChange={handleTextareaChange}
-          onKeyDown={handleKeyDown}
-          placeholder={
-            channel === "whatsapp"
-              ? "Tulis pesan broadcast WhatsApp di sini... Gunakan *tebal*, _miring_, ~coret~, ```kode```."
-              : channel === "email"
-              ? "Tulis konten email di sini... Gunakan **tebal**, *miring*, <u>garis bawah</u>, atau bullet."
-              : "Tulis pesan Telegram di sini..."
-          }
-          rows={15}
-          className="w-full p-4 text-xs font-mono text-slate-800 resize-none focus:outline-none leading-relaxed bg-white selection:bg-indigo-100 placeholder:text-slate-400"
-          style={{ minHeight: "320px" }}
-        />
+        {/* EDITOR BODY CONTENT */}
+        <div className="relative">
+          {editorMode === "html" ? (
+            /* MODE 1: KODE HTML EMAIL (SYNTAX HIGHLIGHTED) */
+            <div
+              className="relative w-full bg-slate-950 rounded-b-xl overflow-hidden font-mono text-xs transition-all duration-150"
+              style={{ height: `${editorHeight}px` }}
+            >
+              {/* Highlighted Code Underlay */}
+              <pre
+                ref={codePreRef}
+                aria-hidden="true"
+                className="absolute inset-0 p-4 m-0 overflow-hidden font-mono text-xs leading-relaxed whitespace-pre-wrap break-words pointer-events-none select-none text-slate-200"
+                dangerouslySetInnerHTML={{
+                  __html: highlightedHtml,
+                }}
+              />
+
+              {/* Transparent Interactive Textarea on Top */}
+              <textarea
+                ref={textareaRef}
+                value={content}
+                onScroll={handleCodeScroll}
+                onFocus={() => {
+                  setActiveTarget("content");
+                }}
+                onClick={() => {
+                  setActiveTarget("content");
+                }}
+                onSelect={() => {
+                  setActiveTarget("content");
+                }}
+                onChange={handleTextareaChange}
+                onKeyDown={handleKeyDown}
+                placeholder="<!-- Tulis atau tempel kode HTML Email Anda di sini -->"
+                spellCheck={false}
+                className="relative z-10 w-full h-full p-4 font-mono text-xs leading-relaxed bg-transparent text-transparent caret-white selection:bg-indigo-600/50 resize-none focus:outline-none placeholder:text-slate-600 whitespace-pre-wrap break-words"
+              />
+            </div>
+          ) : contentIsHtml ? (
+            /* MODE 2: VISUAL FORMAT TEKS (NO RAW CODE TAGS!) */
+            visualSubView === "canvas" ? (
+              /* SUB-VIEW 2A: IN-PLACE EDITABLE VISUAL CANVAS */
+              <div className="flex flex-col bg-white">
+                <div className="px-3.5 py-1.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs text-slate-600">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                    <span className="font-medium text-slate-700">
+                      Klik langsung pada teks atau gambar untuk mengedit
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleOpenVisualLinkEditor}
+                      className="h-7 px-2.5 rounded-md bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer shadow-2xs whitespace-nowrap"
+                      title="Sisipkan atau ubah tautan URL"
+                    >
+                      <Link2 className="h-3.5 w-3.5 text-slate-500" />
+                      <span>Tautan</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleInsertVisualImagePlaceholder}
+                      className="h-7 px-2.5 rounded-md bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer shadow-2xs whitespace-nowrap"
+                      title="Sisipkan placeholder gambar abu-abu"
+                    >
+                      <ImageIcon className="h-3.5 w-3.5 text-slate-500" />
+                      <span>Gambar</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Clean Floating Link Editor Bar */}
+                {activeLinkData && (
+                  <div className="bg-white text-slate-800 rounded-xl shadow-md border border-slate-200 p-3.5 mx-3 my-2 animate-in fade-in duration-150 z-30 space-y-3">
+                    {/* Top Bar: Title & Target Text & Close Button */}
+                    <div className="flex items-center justify-between gap-3 pb-2 border-b border-slate-100">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="p-1 rounded-md bg-slate-100 text-slate-600 shrink-0">
+                          <Link2 className="h-3.5 w-3.5" />
+                        </span>
+                        <span className="text-xs font-semibold text-slate-900 shrink-0">
+                          {activeLinkData.isExisting ? "Edit Tautan URL" : "Sisipkan Tautan URL"}
+                        </span>
+                        <span className="text-[11px] text-slate-600 truncate max-w-[200px] bg-slate-100 px-2 py-0.5 rounded font-mono">
+                          "{activeLinkData.text}"
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setActiveLinkData(null)}
+                        className="text-slate-400 hover:text-slate-600 p-1.5 rounded-md hover:bg-slate-100 transition cursor-pointer shrink-0"
+                        title="Tutup (Esc)"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+
+                    {/* URL Input (Full Width) */}
+                    <div className="relative">
+                      <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+                      <input
+                        type="text"
+                        autoFocus
+                        value={linkUrlInput}
+                        onChange={(e) => setLinkUrlInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleApplyLink();
+                          if (e.key === "Escape") setActiveLinkData(null);
+                        }}
+                        placeholder="https://example.com/promo atau {{cta_link}}..."
+                        className="w-full h-9 pl-9 pr-3 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-800 focus:ring-1 focus:ring-slate-800 transition"
+                      />
+                    </div>
+
+                    {/* Quick Merge Tag Chips */}
+                    <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+                      <span className="text-slate-400 font-medium text-[10px] mr-0.5">Tag Cepat:</span>
+                      {[
+                        { label: "{{cta_link}}", val: "{{cta_link}}" },
+                        { label: "{{web_view_link}}", val: "{{web_view_link}}" },
+                        { label: "{{unsubscribe_link}}", val: "{{unsubscribe_link}}" },
+                        { label: "Website", val: "https://acmecorp.co" },
+                        { label: "WhatsApp", val: "https://wa.me/6281234567890" },
+                      ].map((chip) => (
+                        <button
+                          key={chip.label}
+                          type="button"
+                          onClick={() => setLinkUrlInput(chip.val)}
+                          className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/80 font-mono text-[10px] transition cursor-pointer"
+                        >
+                          {chip.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Bottom Action Row: Divided by intent */}
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                      {/* Left side: Destructive & Testing */}
+                      <div className="flex items-center gap-2">
+                        {activeLinkData.isExisting && (
+                          <button
+                            type="button"
+                            onClick={handleRemoveLink}
+                            className="h-7 px-2.5 rounded-md hover:bg-red-50 text-red-600 text-xs font-medium flex items-center gap-1 transition cursor-pointer"
+                            title="Hapus tautan dari elemen ini"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            <span>Hapus Tautan</span>
+                          </button>
+                        )}
+
+                        {linkUrlInput && linkUrlInput.startsWith("http") && (
+                          <a
+                            href={linkUrlInput}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="h-7 px-2.5 rounded-md hover:bg-slate-100 text-slate-600 text-xs font-medium flex items-center gap-1 transition"
+                            title="Uji buka tautan di tab baru"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                            <span>Uji Buka</span>
+                          </a>
+                        )}
+                      </div>
+
+                      {/* Right side: Secondary Batal & Primary Terapkan */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setActiveLinkData(null)}
+                          className="h-7 px-2.5 rounded-md text-slate-600 hover:bg-slate-100 text-xs font-medium transition cursor-pointer"
+                        >
+                          Batal
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleApplyLink}
+                          className="h-7 px-3.5 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                          <span>Terapkan</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Clean Floating Image Editor Bar with Real-Time Live Preview */}
+                {activeImageData && (
+                  <div className="bg-white text-slate-800 rounded-xl shadow-md border border-slate-200 p-3.5 mx-3 my-2 animate-in fade-in duration-150 z-30 space-y-3">
+                    {/* Top Bar: Title & Image Info & Live Badge & Close Button */}
+                    <div className="flex items-center justify-between gap-3 pb-2 border-b border-slate-100">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="p-1 rounded-md bg-slate-100 text-slate-600 shrink-0">
+                          <ImageIcon className="h-3.5 w-3.5" />
+                        </span>
+                        <span className="text-xs font-semibold text-slate-900 shrink-0">
+                          Pengaturan & Custom Gambar
+                        </span>
+                        <span className="text-[11px] text-slate-500 truncate max-w-[200px] bg-slate-100 px-2 py-0.5 rounded font-mono">
+                          {imageWidthInput || "auto"}
+                        </span>
+                        <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          Pratinjau Langsung
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleCancelImageEdit}
+                        className="text-slate-400 hover:text-slate-600 p-1.5 rounded-md hover:bg-slate-100 transition cursor-pointer shrink-0"
+                        title="Tutup & Batalkan (Esc)"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+
+                    {/* Section 1: Image URL & Upload from PC */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <label className="font-semibold text-slate-700">Sumber Gambar (URL / File)</label>
+                        {enableLogo && logoUrl && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              applyImageLiveUpdate({
+                                src: logoUrl,
+                                width: `${logoWidth || 140}px`,
+                                align: logoAlign || "center",
+                              });
+                              toast.success("Logo brand resmi diterapkan ke gambar!");
+                            }}
+                            className="text-sky-600 hover:text-sky-800 font-medium transition cursor-pointer"
+                          >
+                            Gunakan Logo Brand
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={imageSrcInput}
+                          onChange={(e) => applyImageLiveUpdate({ src: e.target.value })}
+                          placeholder="https://... atau klik Unggah dari Komputer"
+                          className="flex-1 h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-800 transition"
+                        />
+
+                        {/* Hidden File Input for Image */}
+                        <input
+                          ref={imageUploadInputRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={handleUploadImageInModal}
+                          className="hidden"
+                        />
+
+                        <button
+                          type="button"
+                          onClick={() => imageUploadInputRef.current?.click()}
+                          className="h-9 px-3 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 shrink-0 shadow-2xs"
+                          title="Unggah gambar dari komputer / laptop Anda"
+                        >
+                          <Upload className="h-3.5 w-3.5 text-slate-500" />
+                          <span>Unggah</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Section 2: Size Controls (Bisa di-kecilin dll - Render Langsung) */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-semibold text-slate-700">Ukuran Gambar (Lebar):</span>
+                        <div className="flex items-center gap-1 text-[11px]">
+                          <span className="text-slate-400 font-mono text-[10px]">Nilai:</span>
+                          <input
+                            type="text"
+                            value={imageWidthInput}
+                            onChange={(e) => applyImageLiveUpdate({ width: e.target.value })}
+                            placeholder="Contoh: 232px"
+                            className="w-16 h-5 px-1 bg-slate-50 border border-slate-200 rounded text-[10px] font-mono text-slate-800 text-center focus:bg-white focus:outline-none focus:border-slate-800"
+                            title="Ketik angka custom (misal: 232px atau 50%)"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {[
+                          { label: "Logo (120px)", val: "120px" },
+                          { label: "Kecil (180px)", val: "180px" },
+                          { label: "Sedang (260px)", val: "260px" },
+                          { label: "Banner (440px)", val: "440px" },
+                          { label: "Penuh (100%)", val: "100%" },
+                        ].map((size) => (
+                          <button
+                            key={size.label}
+                            type="button"
+                            onClick={() => applyImageLiveUpdate({ width: size.val })}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition cursor-pointer ${
+                              imageWidthInput === size.val
+                                ? "bg-slate-900 text-white border-slate-900 shadow-2xs"
+                                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                            }`}
+                          >
+                            {size.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Section 3: Alignment (Posisi Kiri / Tengah / Kanan) & Alt Text */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-semibold text-slate-700 block">Posisi Gambar</label>
+                        <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+                          <button
+                            type="button"
+                            onClick={() => applyImageLiveUpdate({ align: "left" })}
+                            className={`px-3 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
+                              imageAlignInput === "left"
+                                ? "bg-white text-slate-900 shadow-2xs"
+                                : "text-slate-600 hover:text-slate-900"
+                            }`}
+                          >
+                            Kiri
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => applyImageLiveUpdate({ align: "center" })}
+                            className={`px-3 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
+                              imageAlignInput === "center"
+                                ? "bg-white text-slate-900 shadow-2xs"
+                                : "text-slate-600 hover:text-slate-900"
+                            }`}
+                          >
+                            Tengah
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => applyImageLiveUpdate({ align: "right" })}
+                            className={`px-3 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
+                              imageAlignInput === "right"
+                                ? "bg-white text-slate-900 shadow-2xs"
+                                : "text-slate-600 hover:text-slate-900"
+                            }`}
+                          >
+                            Kanan
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-semibold text-slate-700 block">Keterangan Alt (Opsional)</label>
+                        <input
+                          type="text"
+                          value={imageAltInput}
+                          onChange={(e) => applyImageLiveUpdate({ alt: e.target.value })}
+                          placeholder="Contoh: Logo Perusahaan"
+                          className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-800 transition"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Bottom Action Row */}
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={handleRemoveImage}
+                        className="h-7 px-2.5 rounded-md hover:bg-red-50 text-red-600 text-xs font-medium flex items-center gap-1 transition cursor-pointer"
+                        title="Hapus gambar dari template"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        <span>Hapus Gambar</span>
+                      </button>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleCancelImageEdit}
+                          className="h-7 px-2.5 rounded-md text-slate-600 hover:bg-slate-100 text-xs font-medium transition cursor-pointer"
+                        >
+                          Batal
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleApplyImage}
+                          className="h-7 px-3.5 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                          <span>Terapkan</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div
+                  ref={visualParentScrollRef}
+                  className="p-3 bg-slate-50 overflow-auto transition-all duration-150"
+                  style={{ height: `${editorHeight}px` }}
+                >
+                  <iframe
+                    ref={visualIframeRef}
+                    title="In-Place Visual Email Editor"
+                    className="w-full h-full min-h-[440px] border border-slate-200/90 rounded-xl bg-white shadow-2xs"
+                  />
+                </div>
+              </div>
+            ) : (
+              /* SUB-VIEW 2B: DETECTED TEXT FORM INPUTS */
+              <div
+                className="p-4 bg-slate-50/80 space-y-3 flex flex-col transition-all duration-150"
+                style={{ height: `${editorHeight}px` }}
+              >
+                <div className="flex items-center justify-between shrink-0">
+                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <Type className="h-4 w-4 text-slate-700" />
+                    <span>Teks HTML yang Terdeteksi ({extractedTextBlocks.length} Elemen)</span>
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    Ketik teks pengganti untuk langsung memperbarui email
+                  </span>
+                </div>
+
+                <div className="space-y-2.5 flex-1 overflow-y-auto pr-1">
+                  {extractedTextBlocks.map((block) => (
+                    <div
+                      key={block.id}
+                      className="p-3 rounded-xl bg-white border border-slate-200/90 shadow-2xs space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="font-semibold text-slate-700 bg-slate-100 border border-slate-200/80 px-2 py-0.5 rounded">
+                          {block.label}
+                        </span>
+                        <span className="text-slate-400 font-mono">&lt;{block.tag}&gt;</span>
+                      </div>
+
+                      <input
+                        type="text"
+                        defaultValue={block.text}
+                        onBlur={(e) => {
+                          const val = e.target.value.trim();
+                          if (val && val !== block.text) {
+                            handleUpdateExtractedText(block.text, val);
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            const val = e.currentTarget.value.trim();
+                            if (val && val !== block.text) {
+                              handleUpdateExtractedText(block.text, val);
+                              e.currentTarget.blur();
+                            }
+                          }
+                        }}
+                        className="w-full h-8 px-3 rounded-lg border border-slate-200 bg-slate-50/40 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-slate-800 font-medium"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          ) : (
+            /* MODE 3: STANDARD PLAIN TEXT / MARKDOWN EDITOR */
+            <textarea
+              ref={textareaRef}
+              value={content}
+              onFocus={() => {
+                setActiveTarget("content");
+              }}
+              onClick={() => {
+                setActiveTarget("content");
+              }}
+              onSelect={() => {
+                setActiveTarget("content");
+              }}
+              onChange={handleTextareaChange}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                channel === "whatsapp"
+                  ? "Tulis pesan broadcast WhatsApp di sini... Contoh: Halo kak *{{first_name}}*, terima kasih telah memesan!"
+                  : "Tulis konten email di sini...\nGunakan **teks tebal**, *miring*, heading (# Judul), atau tautan [teks](url).\nSisipkan merge tag seperti {{first_name}} atau {{kode_promo}}."
+              }
+              rows={13}
+              className="w-full p-4 text-xs font-mono bg-white text-slate-800 resize-none focus:outline-none leading-relaxed selection:bg-slate-200 placeholder:text-slate-400 transition-all duration-150"
+              style={{ height: `${editorHeight}px` }}
+            />
+          )}
+        </div>
 
         {/* Editor Bottom Bar */}
-        <div className="border-t border-slate-100 px-4 py-2.5 bg-slate-50/50 flex flex-wrap items-center justify-between gap-2 text-xs">
-          <span className="text-[11px] text-slate-400 font-mono">
-            {content.length} characters
-          </span>
+        <div className="border-t border-slate-100 px-4 py-2.5 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] text-slate-400 font-mono">
+              {content.length} karakter
+            </span>
+
+            {/* Quick Height Control */}
+            <div className="inline-flex items-center gap-1 text-[11px] bg-slate-200/60 p-0.5 rounded-lg">
+              <span className="text-slate-500 text-[10px] px-1 font-medium">Tinggi Editor:</span>
+              <button
+                type="button"
+                onClick={() => handleSetEditorHeight(500)}
+                className={`px-2 py-0.5 rounded-md text-[10px] font-semibold transition cursor-pointer ${
+                  editorHeight <= 540
+                    ? "bg-white text-slate-900 shadow-2xs font-bold"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+                title="Tinggi sedang (500px)"
+              >
+                Sedang (500px)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetEditorHeight(680)}
+                className={`px-2 py-0.5 rounded-md text-[10px] font-semibold transition cursor-pointer ${
+                  editorHeight > 540 && editorHeight <= 750
+                    ? "bg-white text-slate-900 shadow-2xs font-bold"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+                title="Tinggi panjang (680px)"
+              >
+                Panjang (680px)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetEditorHeight(880)}
+                className={`px-2 py-0.5 rounded-md text-[10px] font-semibold transition cursor-pointer ${
+                  editorHeight > 750
+                    ? "bg-white text-slate-900 shadow-2xs font-bold"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+                title="Tinggi ekstra (880px)"
+              >
+                Ekstra (880px)
+              </button>
+            </div>
+          </div>
 
           {/* Quick Merge Tag Chips */}
           <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-0.5 hidden sm:inline">
+              Tag Cepat:
+            </span>
             {QUICK_MERGE_TAGS.map((tag) => (
               <button
                 key={tag}
                 type="button"
-                onClick={() => handleInsertTag(tag)}
-                className="px-2.5 py-1 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border border-indigo-100/80 font-mono text-[11px] font-medium transition cursor-pointer active:scale-95"
-                title={`Klik untuk menyisipkan ${tag}`}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => handleInsertContentTag(tag)}
+                className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 font-mono text-[11px] font-medium transition cursor-pointer active:scale-95"
+                title={`Klik untuk menyisipkan ${tag} ke editor email`}
               >
                 {tag}
               </button>
             ))}
+
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={onOpenMergeTagsModal}
+              className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[11px] font-semibold transition cursor-pointer"
+            >
+              Tag Lain...
+            </button>
           </div>
         </div>
       </div>
 
-      {/* MAILCHIMP COMPONENT BLOCKS (Only for Email) */}
+      {/* 3. MODUL LOGO PERUSAHAAN (CUSTOM LOGO) */}
       {channel === "email" && (
-        <div className="space-y-3 pt-2">
-          {/* 1. MAILCHIMP CTA BUTTON BLOCK */}
+        <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-2xs space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="h-7 w-7 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center">
+                <ImageIcon className="h-3.5 w-3.5" />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-slate-900">
+                  Logo Organisasi & Brand (Custom Logo)
+                </h4>
+                <p className="text-[11px] text-slate-400">
+                  Tampilkan logo resmi brand Anda di bagian atas template email
+                </p>
+              </div>
+            </div>
+
+            {/* Toggle switch */}
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={enableLogo}
+                onChange={(e) => onEnableLogoChange?.(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-slate-900"></div>
+            </label>
+          </div>
+
+          {enableLogo && (
+            <div className="space-y-3 pt-2 border-t border-slate-100 animate-in fade-in-50 duration-150">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
+                <div className="sm:col-span-2 space-y-1">
+                  <label className="text-[11px] font-medium text-slate-600">
+                    URL Gambar Logo
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={logoUrl}
+                      onChange={(e) => onLogoUrlChange?.(e.target.value)}
+                      placeholder="https://acmecorp.co/logo.png"
+                      className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-slate-800"
+                    />
+
+                    {/* Hidden file input */}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleLogoFileUpload}
+                      className="hidden"
+                    />
+
+                    {/* Upload from PC Button */}
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="h-8 px-3 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 whitespace-nowrap transition cursor-pointer flex items-center gap-1 shrink-0"
+                      title="Unggah logo dari komputer Anda"
+                    >
+                      <Upload className="h-3 w-3" />
+                      <span>Unggah</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Logo Preview Thumbnail */}
+                <div className="space-y-1">
+                  <span className="text-[11px] font-medium text-slate-500 block">
+                    Pratinjau Logo
+                  </span>
+                  <div className="h-10 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-center p-1 overflow-hidden">
+                    {logoUrl ? (
+                      <img
+                        src={logoUrl}
+                        alt="Logo Preview"
+                        className="max-h-8 max-w-full object-contain"
+                      />
+                    ) : (
+                      <span className="text-[10px] text-slate-400 italic">
+                        Belum ada logo
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Logo Width & Alignment Controls */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-1 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-medium text-slate-600">
+                    Lebar Logo:
+                  </span>
+                  <div className="flex items-center gap-1">
+                    {[100, 140, 180].map((width) => (
+                      <button
+                        key={width}
+                        type="button"
+                        onClick={() => onLogoWidthChange?.(width)}
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition cursor-pointer ${
+                          logoWidth === width
+                            ? "bg-slate-900 text-white"
+                            : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                        }`}
+                      >
+                        {width}px
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-medium text-slate-600">
+                    Posisi:
+                  </span>
+                  <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => onLogoAlignChange?.("left")}
+                      className={`p-1 rounded transition cursor-pointer ${
+                        logoAlign === "left"
+                          ? "bg-white text-slate-900 shadow-2xs"
+                          : "text-slate-500 hover:text-slate-800"
+                      }`}
+                      title="Rata Kiri"
+                    >
+                      <AlignLeft className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onLogoAlignChange?.("center")}
+                      className={`p-1 rounded transition cursor-pointer ${
+                        logoAlign === "center"
+                          ? "bg-white text-slate-900 shadow-2xs"
+                          : "text-slate-500 hover:text-slate-800"
+                      }`}
+                      title="Rata Tengah"
+                    >
+                      <AlignCenter className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onLogoAlignChange?.("right")}
+                      className={`p-1 rounded transition cursor-pointer ${
+                        logoAlign === "right"
+                          ? "bg-white text-slate-900 shadow-2xs"
+                          : "text-slate-500 hover:text-slate-800"
+                      }`}
+                      title="Rata Kanan"
+                    >
+                      <AlignRight className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 4. MODUL CTA BUTTON & SOCIAL */}
+      {channel === "email" && (
+        <div className="space-y-3 pt-1">
+          {/* CTA BUTTON BLOCK */}
           <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-2xs space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="h-7 w-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                  <MousePointerClick className="h-4 w-4" />
+                  <MousePointerClick className="h-3.5 w-3.5" />
                 </div>
                 <div>
-                  <h3 className="text-xs font-bold text-slate-900">
-                    Tombol CTA (Call to Action)
-                  </h3>
-                  <p className="text-[10px] text-slate-400">
-                    Tombol aksi utama untuk konversi klik pelanggan
+                  <h4 className="text-xs font-bold text-slate-900">
+                    Tombol CTA Otomatis (Call to Action)
+                  </h4>
+                  <p className="text-[11px] text-slate-400">
+                    Sematkan tombol aksi utama tanpa perlu menulis kode HTML
                   </p>
                 </div>
               </div>
 
-              {/* Toggle Switch */}
               <label className="relative inline-flex items-center cursor-pointer">
                 <input
                   type="checkbox"
@@ -326,44 +2051,50 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
             </div>
 
             {enableCta && (
-              <div className="pt-2 border-t border-slate-100 space-y-3 animate-in fade-in-50 duration-200">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                  <div className="space-y-1">
-                    <label className="font-semibold text-slate-700">Teks Tombol</label>
-                    <input
-                      type="text"
-                      value={ctaText}
-                      onChange={(e) => onCtaTextChange?.(e.target.value)}
-                      placeholder="Contoh: Belanja Sekarang"
-                      className="w-full h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="font-semibold text-slate-700">Tautan Tujuan (URL)</label>
-                    <input
-                      type="url"
-                      value={ctaUrl}
-                      onChange={(e) => onCtaUrlChange?.(e.target.value)}
-                      placeholder="https://..."
-                      className="w-full h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
-                    />
-                  </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100 animate-in fade-in-50 duration-150">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-slate-600">
+                    Teks Tombol
+                  </label>
+                  <input
+                    type="text"
+                    value={ctaText}
+                    onChange={(e) => onCtaTextChange?.(e.target.value)}
+                    placeholder="Contoh: Belanja Sekarang"
+                    className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
+                  />
                 </div>
 
-                {/* Color presets */}
-                <div className="flex items-center gap-2 pt-1">
-                  <span className="text-[11px] font-medium text-slate-500">Warna Tombol:</span>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-slate-600">
+                    Tautan Tujuan (URL)
+                  </label>
+                  <input
+                    type="text"
+                    value={ctaUrl}
+                    onChange={(e) => onCtaUrlChange?.(e.target.value)}
+                    placeholder="https://tokoonline.com/promo"
+                    className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <div className="sm:col-span-2 flex items-center gap-2 pt-1">
+                  <span className="text-[11px] font-medium text-slate-500">
+                    Warna Tombol:
+                  </span>
                   <div className="flex items-center gap-1.5">
-                    {CTA_COLORS.map((c) => (
+                    {CTA_COLORS.map((col) => (
                       <button
-                        key={c.hex}
+                        key={col.hex}
                         type="button"
-                        onClick={() => onCtaColorChange?.(c.hex)}
-                        className={`h-5 w-5 rounded-full border-2 transition cursor-pointer ${
-                          ctaColor === c.hex ? "border-slate-800 scale-110" : "border-white"
+                        onClick={() => onCtaColorChange?.(col.hex)}
+                        style={{ backgroundColor: col.hex }}
+                        className={`w-5 h-5 rounded-full transition cursor-pointer ${
+                          ctaColor === col.hex
+                            ? "ring-2 ring-offset-2 ring-indigo-500 scale-110"
+                            : "opacity-80 hover:opacity-100"
                         }`}
-                        style={{ backgroundColor: c.hex }}
-                        title={c.name}
+                        title={col.name}
                       />
                     ))}
                   </div>
@@ -372,24 +2103,23 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
             )}
           </div>
 
-          {/* 2. MAILCHIMP SOCIAL & FOOTER BLOCK */}
+          {/* SOCIAL & FOOTER BLOCK */}
           <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-2xs space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="h-7 w-7 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center">
-                  <Share2 className="h-4 w-4" />
+                <div className="h-7 w-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <Share2 className="h-3.5 w-3.5" />
                 </div>
                 <div>
-                  <h3 className="text-xs font-bold text-slate-900">
-                    Tautan Sosial Media & Footer
-                  </h3>
-                  <p className="text-[10px] text-slate-400">
-                    Tampilkan ikon Instagram, WhatsApp, dan Website di footer
+                  <h4 className="text-xs font-bold text-slate-900">
+                    Tautan Sosial Media & Footer Kepatuhan
+                  </h4>
+                  <p className="text-[11px] text-slate-400">
+                    Tampilkan tautan website, media sosial, dan alamat pengirim di bagian bawah email
                   </p>
                 </div>
               </div>
 
-              {/* Toggle Switch */}
               <label className="relative inline-flex items-center cursor-pointer">
                 <input
                   type="checkbox"
@@ -402,35 +2132,41 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
             </div>
 
             {enableSocial && (
-              <div className="pt-2 border-t border-slate-100 space-y-2.5 animate-in fade-in-50 duration-200 text-xs">
-                <div className="flex items-center gap-2">
-                  <Globe className="h-4 w-4 text-slate-400" />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2 border-t border-slate-100 animate-in fade-in-50 duration-150 text-xs">
+                <div>
+                  <label className="text-[10px] font-medium text-slate-500 block mb-0.5">
+                    Website
+                  </label>
                   <input
-                    type="url"
+                    type="text"
                     value={websiteUrl}
                     onChange={(e) => onWebsiteUrlChange?.(e.target.value)}
-                    placeholder="URL Website resmi (https://...)"
-                    className="flex-1 h-8 px-3 rounded-lg border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
+                    placeholder="https://acmecorp.co"
+                    className="w-full h-7 px-2 rounded-lg border border-slate-200 text-xs text-slate-800"
                   />
                 </div>
-                <div className="flex items-center gap-2">
-                  <Camera className="h-4 w-4 text-slate-400" />
+                <div>
+                  <label className="text-[10px] font-medium text-slate-500 block mb-0.5">
+                    Instagram
+                  </label>
                   <input
-                    type="url"
+                    type="text"
                     value={instagramUrl}
                     onChange={(e) => onInstagramUrlChange?.(e.target.value)}
-                    placeholder="Instagram URL (https://instagram.com/...)"
-                    className="flex-1 h-8 px-3 rounded-lg border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
+                    placeholder="https://instagram.com/acme"
+                    className="w-full h-7 px-2 rounded-lg border border-slate-200 text-xs text-slate-800"
                   />
                 </div>
-                <div className="flex items-center gap-2">
-                  <MessageCircle className="h-4 w-4 text-slate-400" />
+                <div>
+                  <label className="text-[10px] font-medium text-slate-500 block mb-0.5">
+                    WhatsApp CS
+                  </label>
                   <input
-                    type="url"
+                    type="text"
                     value={whatsappUrl}
                     onChange={(e) => onWhatsappUrlChange?.(e.target.value)}
-                    placeholder="WhatsApp Link (https://wa.me/...)"
-                    className="flex-1 h-8 px-3 rounded-lg border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
+                    placeholder="https://wa.me/62812..."
+                    className="w-full h-7 px-2 rounded-lg border border-slate-200 text-xs text-slate-800"
                   />
                 </div>
               </div>

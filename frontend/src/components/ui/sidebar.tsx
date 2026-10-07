@@ -8,6 +8,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 const SIDEBAR_WIDTH = "16rem"
 const SIDEBAR_WIDTH_ICON = "4.25rem"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
+const SIDEBAR_STORAGE_KEY = "campaignblast_sidebar_open"
 
 type SidebarContext = {
   state: "expanded" | "collapsed"
@@ -49,7 +50,17 @@ const SidebarProvider = React.forwardRef<
     },
     ref
   ) => {
-    const [_open, _setOpen] = React.useState(defaultOpen)
+    const [_open, _setOpen] = React.useState<boolean>(() => {
+      try {
+        const saved = localStorage.getItem(SIDEBAR_STORAGE_KEY)
+        if (saved !== null) {
+          return saved === "true"
+        }
+      } catch {
+        // ignore
+      }
+      return defaultOpen
+    })
     const open = openProp ?? _open
 
     const setOpen = React.useCallback(
@@ -59,6 +70,11 @@ const SidebarProvider = React.forwardRef<
           setOpenProp(openState)
         } else {
           _setOpen(openState)
+        }
+        try {
+          localStorage.setItem(SIDEBAR_STORAGE_KEY, String(openState))
+        } catch {
+          // ignore
         }
       },
       [setOpenProp, open]
@@ -326,7 +342,7 @@ const SidebarHeader = React.forwardRef<
       data-sidebar="header"
       className={cn(
         "flex flex-col gap-2 p-3.5 border-b border-slate-100 dark:border-slate-800 transition-all",
-        isCollapsed && "p-2 items-center",
+        isCollapsed && "p-2 items-center justify-center",
         className
       )}
       {...props}
@@ -348,7 +364,7 @@ const SidebarFooter = React.forwardRef<
       data-sidebar="footer"
       className={cn(
         "flex flex-col gap-2 p-3 mt-auto border-t border-slate-100 dark:border-slate-800 transition-all",
-        isCollapsed && "p-2 items-center",
+        isCollapsed && "p-2 items-center justify-center",
         className
       )}
       {...props}
@@ -370,7 +386,7 @@ const SidebarContent = React.forwardRef<
       data-sidebar="content"
       className={cn(
         "flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overflow-x-hidden p-2.5 transition-all",
-        isCollapsed && "px-1 py-2 items-center",
+        isCollapsed && "px-0 py-2 items-center",
         className
       )}
       {...props}
@@ -383,11 +399,18 @@ const SidebarGroup = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<"div">
 >(({ className, ...props }, ref) => {
+  const { state, isMobile } = useSidebar()
+  const isCollapsed = state === "collapsed" && !isMobile
+
   return (
     <div
       ref={ref}
       data-sidebar="group"
-      className={cn("relative flex w-full min-w-0 flex-col py-1.5", className)}
+      className={cn(
+        "relative flex w-full min-w-0 flex-col py-1.5",
+        isCollapsed && "items-center px-0",
+        className
+      )}
       {...props}
     />
   )
@@ -418,27 +441,45 @@ SidebarGroupLabel.displayName = "SidebarGroupLabel"
 const SidebarMenu = React.forwardRef<
   HTMLUListElement,
   React.ComponentProps<"ul">
->(({ className, ...props }, ref) => (
-  <ul
-    ref={ref}
-    data-sidebar="menu"
-    className={cn("flex w-full min-w-0 flex-col gap-1", className)}
-    {...props}
-  />
-))
+>(({ className, ...props }, ref) => {
+  const { state, isMobile } = useSidebar()
+  const isCollapsed = state === "collapsed" && !isMobile
+
+  return (
+    <ul
+      ref={ref}
+      data-sidebar="menu"
+      className={cn(
+        "flex w-full min-w-0 flex-col gap-1",
+        isCollapsed && "items-center px-0 gap-1.5",
+        className
+      )}
+      {...props}
+    />
+  )
+})
 SidebarMenu.displayName = "SidebarMenu"
 
 const SidebarMenuItem = React.forwardRef<
   HTMLLIElement,
   React.ComponentProps<"li">
->(({ className, ...props }, ref) => (
-  <li
-    ref={ref}
-    data-sidebar="menu-item"
-    className={cn("group/menu-item relative", className)}
-    {...props}
-  />
-))
+>(({ className, ...props }, ref) => {
+  const { state, isMobile } = useSidebar()
+  const isCollapsed = state === "collapsed" && !isMobile
+
+  return (
+    <li
+      ref={ref}
+      data-sidebar="menu-item"
+      className={cn(
+        "group/menu-item relative",
+        isCollapsed && "flex justify-center w-full",
+        className
+      )}
+      {...props}
+    />
+  )
+})
 SidebarMenuItem.displayName = "SidebarMenuItem"
 
 const SidebarMenuButton = React.forwardRef<

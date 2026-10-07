@@ -104,12 +104,12 @@ export const AppSidebar: React.FC = () => {
     <>
       <Sidebar collapsible="icon" className="border-r border-slate-200/80 bg-white">
         {/* 1. BRAND HEADER & WORKSPACE */}
-        <SidebarHeader className="p-3">
+        <SidebarHeader className={isCollapsed ? "p-2 flex flex-col items-center justify-center gap-2" : "p-3"}>
           {/* Brand Logo */}
           {isCollapsed ? (
             <Tooltip>
               <TooltipTrigger asChild>
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-500 text-white font-bold shadow-xs cursor-pointer mx-auto">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-500 text-white font-bold shadow-xs cursor-pointer">
                   <Send className="h-4 w-4 -rotate-12" />
                 </div>
               </TooltipTrigger>
@@ -132,7 +132,7 @@ export const AppSidebar: React.FC = () => {
           {isCollapsed ? (
             <Tooltip>
               <TooltipTrigger asChild>
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-100 text-sky-700 font-bold text-xs border border-sky-200/70 cursor-pointer mx-auto hover:bg-sky-200/60 transition">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-100 text-sky-700 font-bold text-xs border border-sky-200/70 cursor-pointer hover:bg-sky-200/60 transition">
                   A
                 </div>
               </TooltipTrigger>
@@ -154,51 +154,66 @@ export const AppSidebar: React.FC = () => {
         </SidebarHeader>
 
         {/* 2. NAVIGATION MENU */}
-        <SidebarContent className="px-3 py-1">
-          <SidebarGroup>
+        <SidebarContent className={isCollapsed ? "px-0 py-2 flex flex-col items-center" : "px-3 py-1"}>
+          <SidebarGroup className={isCollapsed ? "px-0 items-center w-full" : ""}>
             {!isCollapsed && (
               <SidebarGroupLabel className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-2.5 mb-1">
                 MENU
               </SidebarGroupLabel>
             )}
 
-            <SidebarMenu>
+            <SidebarMenu className={isCollapsed ? "px-0 items-center w-full gap-1.5" : "gap-1"}>
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = location.pathname === item.path;
 
                 return (
-                  <SidebarMenuItem key={item.title}>
+                  <SidebarMenuItem key={item.title} className={isCollapsed ? "flex justify-center w-full px-0" : ""}>
                     <SidebarMenuButton
                       asChild
                       isActive={isActive}
                       tooltip={item.title}
                       className={
-                        isActive
+                        isCollapsed
+                          ? isActive
+                            ? "h-10 w-10 p-0 flex items-center justify-center rounded-xl bg-sky-50 text-sky-600 border border-sky-100 font-semibold"
+                            : "h-10 w-10 p-0 flex items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                          : isActive
                           ? "bg-sky-50 text-sky-600 font-semibold border border-sky-100/80 hover:bg-sky-50 hover:text-sky-600"
                           : "text-slate-600 hover:bg-slate-100/80 hover:text-slate-900 font-medium"
                       }
                     >
-                      <Link to={item.path} className="flex items-center justify-between w-full">
-                        <div className="flex items-center gap-2 min-w-0">
+                      {isCollapsed ? (
+                        <Link
+                          to={item.path}
+                          className="flex h-10 w-10 items-center justify-center rounded-xl relative"
+                        >
                           <Icon
                             className={`h-4 w-4 shrink-0 ${
                               isActive ? "text-sky-600" : "text-slate-500"
                             }`}
                           />
-                          <span className={isCollapsed ? "hidden" : "truncate"}>
-                            {item.title}
-                          </span>
-                        </div>
-                        {!isCollapsed && item.badge && (
-                          <span className="ml-auto text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-sky-100 text-sky-700">
-                            {item.badge}
-                          </span>
-                        )}
-                        {isCollapsed && item.badge && (
-                          <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-sky-500 ring-2 ring-white" />
-                        )}
-                      </Link>
+                          {item.badge && (
+                            <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-sky-500 ring-2 ring-white" />
+                          )}
+                        </Link>
+                      ) : (
+                        <Link to={item.path} className="flex items-center justify-between w-full">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Icon
+                              className={`h-4 w-4 shrink-0 ${
+                                isActive ? "text-sky-600" : "text-slate-500"
+                              }`}
+                            />
+                            <span className="truncate">{item.title}</span>
+                          </div>
+                          {item.badge && (
+                            <span className="ml-auto text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-sky-100 text-sky-700">
+                              {item.badge}
+                            </span>
+                          )}
+                        </Link>
+                      )}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );
@@ -208,13 +223,13 @@ export const AppSidebar: React.FC = () => {
         </SidebarContent>
 
         {/* 3. USER PROFILE FOOTER */}
-        <SidebarFooter className="p-3 border-t border-slate-100">
+        <SidebarFooter className={isCollapsed ? "p-2 flex items-center justify-center border-t border-slate-100" : "p-3 border-t border-slate-100"}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               {isCollapsed ? (
                 <button
                   type="button"
-                  className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-slate-100 transition mx-auto outline-none cursor-pointer"
+                  className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-slate-100 transition outline-none cursor-pointer"
                 >
                   <div className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-500 text-white font-bold text-xs shadow-2xs">
                     {userInitials}

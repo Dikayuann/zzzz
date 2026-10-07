@@ -1,5 +1,13 @@
 import React, { useState } from "react";
-import { Code2, Check, Edit2 } from "lucide-react";
+import {
+  Code2,
+  Check,
+  Edit2,
+  LayoutTemplate,
+  Plus,
+  Save,
+  Loader2,
+} from "lucide-react";
 import type { TemplateChannel } from "@/types/template";
 
 interface TemplateHeaderProps {
@@ -8,8 +16,11 @@ interface TemplateHeaderProps {
   channel: TemplateChannel;
   onChannelChange: (channel: TemplateChannel) => void;
   onOpenMergeTags: () => void;
+  onOpenTemplatePicker: () => void;
+  onNewTemplate: () => void;
   onSaveTemplate: () => void;
   isSaving?: boolean;
+  hasSavedTemplate?: boolean;
 }
 
 export const TemplateHeader: React.FC<TemplateHeaderProps> = ({
@@ -18,8 +29,11 @@ export const TemplateHeader: React.FC<TemplateHeaderProps> = ({
   channel,
   onChannelChange,
   onOpenMergeTags,
+  onOpenTemplatePicker,
+  onNewTemplate,
   onSaveTemplate,
   isSaving = false,
+  hasSavedTemplate = false,
 }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [tempTitle, setTempTitle] = useState(title);
@@ -34,9 +48,9 @@ export const TemplateHeader: React.FC<TemplateHeaderProps> = ({
   };
 
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200/80">
-      {/* LEFT: Title, Channel Selector, Merge Tags, Save */}
-      <div className="flex flex-wrap items-center gap-3">
+    <div className="pb-4 border-b border-slate-200/80 space-y-3">
+      {/* ROW 1: Title (Left) + Actions (Right) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         {/* Title / Inline Name Edit */}
         {isEditingTitle ? (
           <div className="flex items-center gap-1.5">
@@ -53,7 +67,7 @@ export const TemplateHeader: React.FC<TemplateHeaderProps> = ({
                 }
               }}
               onBlur={handleCommitTitle}
-              className="text-lg font-bold text-slate-900 bg-white border border-indigo-400 rounded-lg px-2.5 py-1 focus:outline-none shadow-2xs"
+              className="text-lg font-bold text-slate-900 bg-white border border-slate-400 rounded-lg px-2.5 py-1 focus:outline-none shadow-2xs"
             />
             <button
               type="button"
@@ -70,25 +84,87 @@ export const TemplateHeader: React.FC<TemplateHeaderProps> = ({
               setTempTitle(title);
               setIsEditingTitle(true);
             }}
-            className="group flex items-center gap-2 cursor-pointer py-1"
+            className="group flex items-center gap-2 cursor-pointer py-1 min-w-0"
             title="Klik untuk ubah nama template"
           >
-            <h1 className="text-xl font-bold tracking-tight text-slate-900 group-hover:text-indigo-600 transition">
+            <h1 className="text-xl font-bold tracking-tight text-slate-900 group-hover:text-slate-700 transition truncate">
               {title}
             </h1>
-            <Edit2 className="h-3.5 w-3.5 text-slate-400 opacity-0 group-hover:opacity-100 transition" />
+            <Edit2 className="h-3.5 w-3.5 text-slate-400 opacity-0 group-hover:opacity-100 transition shrink-0" />
+            {hasSavedTemplate && (
+              <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-full shrink-0">
+                Tersimpan
+              </span>
+            )}
           </div>
         )}
 
-        {/* Channel Selector Pills: [ Email | WhatsApp | Telegram ] */}
-        <div className="inline-flex rounded-lg border border-slate-200/90 bg-white p-0.5 shadow-2xs">
+        {/* RIGHT: Action Buttons (Always neatly grouped in one horizontal row) */}
+        <div className="flex items-center gap-2 shrink-0 flex-wrap sm:flex-nowrap">
+          {/* Template Picker Button */}
+          <button
+            type="button"
+            onClick={onOpenTemplatePicker}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200/90 bg-white hover:bg-slate-50 hover:border-slate-400 text-xs font-semibold text-slate-700 shadow-2xs transition cursor-pointer active:scale-95 whitespace-nowrap"
+            title="Buka Pustaka Template Preset & Kustom"
+          >
+            <LayoutTemplate className="h-3.5 w-3.5 text-slate-700" />
+            <span>Pilih Template</span>
+          </button>
+
+          {/* + Buat Baru Button */}
+          <button
+            type="button"
+            onClick={onNewTemplate}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200/90 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 shadow-2xs transition cursor-pointer active:scale-95 whitespace-nowrap"
+            title="Mulai Template Bersih Baru"
+          >
+            <Plus className="h-3.5 w-3.5 text-slate-500" />
+            <span>Baru</span>
+          </button>
+
+          {/* <> Merge Tags Button */}
+          <button
+            type="button"
+            onClick={onOpenMergeTags}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200/90 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 shadow-2xs transition cursor-pointer active:scale-95 whitespace-nowrap"
+          >
+            <Code2 className="h-3.5 w-3.5 text-slate-500" />
+            <span>Merge tags</span>
+          </button>
+
+          {/* Save Template Button */}
+          <button
+            type="button"
+            onClick={onSaveTemplate}
+            disabled={isSaving}
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-xs font-semibold text-white shadow-2xs transition cursor-pointer active:scale-95 disabled:opacity-60 whitespace-nowrap"
+          >
+            {isSaving ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <span>Menyimpan...</span>
+              </>
+            ) : (
+              <>
+                <Save className="h-3.5 w-3.5" />
+                <span>Simpan Template</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* ROW 2: Channel Selector Pills */}
+      <div className="flex items-center">
+        <div className="inline-flex rounded-xl border border-slate-200/90 bg-slate-100/80 p-0.5 shadow-2xs">
           <button
             type="button"
             onClick={() => onChannelChange("email")}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition cursor-pointer ${
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition cursor-pointer ${
               channel === "email"
-                ? "bg-[#4F46E5] text-white shadow-2xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                ? "bg-white text-slate-900 shadow-2xs"
+                : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
             }`}
           >
             Email
@@ -96,10 +172,10 @@ export const TemplateHeader: React.FC<TemplateHeaderProps> = ({
           <button
             type="button"
             onClick={() => onChannelChange("whatsapp")}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition cursor-pointer ${
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition cursor-pointer ${
               channel === "whatsapp"
                 ? "bg-emerald-600 text-white shadow-2xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
             }`}
           >
             WhatsApp
@@ -107,35 +183,15 @@ export const TemplateHeader: React.FC<TemplateHeaderProps> = ({
           <button
             type="button"
             onClick={() => onChannelChange("telegram")}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition cursor-pointer ${
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition cursor-pointer ${
               channel === "telegram"
                 ? "bg-sky-500 text-white shadow-2xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
             }`}
           >
             Telegram
           </button>
         </div>
-
-        {/* <> Merge tags Button */}
-        <button
-          type="button"
-          onClick={onOpenMergeTags}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200/90 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 shadow-2xs transition cursor-pointer active:scale-95"
-        >
-          <Code2 className="h-3.5 w-3.5 text-slate-500" />
-          <span>Merge tags</span>
-        </button>
-
-        {/* Save Template Button */}
-        <button
-          type="button"
-          onClick={onSaveTemplate}
-          disabled={isSaving}
-          className="px-4 py-1.5 rounded-lg bg-[#4F46E5] hover:bg-[#4338CA] text-xs font-semibold text-white shadow-2xs transition cursor-pointer active:scale-95 disabled:opacity-60"
-        >
-          {isSaving ? "Menyimpan..." : "Save template"}
-        </button>
       </div>
     </div>
   );

@@ -8,6 +8,7 @@ export interface RecipientPreview {
   email: string;
   phone: string;
   company: string;
+  customAttributes?: Record<string, string>;
 }
 
 export interface TemplateData {
@@ -20,6 +21,11 @@ export interface TemplateData {
   orgName: string;
   senderEmail: string;
   brandColor?: string;
+  // Custom Logo Block
+  enableLogo?: boolean;
+  logoUrl?: string;
+  logoWidth?: number;
+  logoAlign?: "left" | "center" | "right";
   // Mailchimp CTA Button Block
   enableCta?: boolean;
   ctaText?: string;

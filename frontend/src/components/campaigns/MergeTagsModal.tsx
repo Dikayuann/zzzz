@@ -9,7 +9,6 @@ import {
 import {
   Search,
   Tag,
-  Sparkles,
   Plus,
   User,
   Building2,
@@ -27,13 +26,19 @@ import { toast } from "sonner";
 interface MergeTagsModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSelectTag: (tag: string) => void;
+  onSelectTag: (tag: string, target?: "subject" | "preheader" | "content") => void;
+  targetField?: "subject" | "preheader" | "content";
+  onTargetFieldChange?: (field: "subject" | "preheader" | "content") => void;
+  showTargetSelector?: boolean;
 }
 
 export const MergeTagsModal: React.FC<MergeTagsModalProps> = ({
   open,
   onOpenChange,
   onSelectTag,
+  targetField,
+  onTargetFieldChange,
+  showTargetSelector = false,
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState<string>("all");
@@ -74,7 +79,7 @@ export const MergeTagsModal: React.FC<MergeTagsModalProps> = ({
   }, [activeCategory, searchQuery]);
 
   const handleInsert = (tag: string) => {
-    onSelectTag(tag);
+    onSelectTag(tag, targetField);
     onOpenChange(false);
   };
 
@@ -91,18 +96,18 @@ export const MergeTagsModal: React.FC<MergeTagsModalProps> = ({
       return;
     }
 
-    onSelectTag(cleanTag);
+    onSelectTag(cleanTag, targetField);
     setCustomTagInput("");
     onOpenChange(false);
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col p-0 overflow-hidden rounded-3xl border-slate-200">
-        <DialogHeader className="p-5 pb-3 border-b border-slate-100 bg-gradient-to-b from-indigo-50/40 to-white">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs">
-              <Sparkles className="h-4 w-4" />
+      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col p-0 overflow-hidden rounded-2xl border-slate-200">
+        <DialogHeader className="p-5 pb-3 pr-14 border-b border-slate-200 bg-white">
+          <div className="flex items-center gap-2.5">
+            <div className="h-8 w-8 rounded-lg bg-slate-900 text-white flex items-center justify-center shadow-xs">
+              <Tag className="h-4 w-4" />
             </div>
             <div>
               <DialogTitle className="text-base font-bold text-slate-900">
@@ -114,6 +119,50 @@ export const MergeTagsModal: React.FC<MergeTagsModalProps> = ({
             </div>
           </div>
 
+          {/* Optional Target Field Switcher */}
+          {showTargetSelector && targetField && (
+            <div className="mt-2.5 flex items-center gap-2 text-xs bg-slate-50 p-2 rounded-xl border border-slate-200">
+              <span className="text-[11px] font-semibold text-slate-700 shrink-0">
+                Sisipkan tag ke kolom:
+              </span>
+              <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => onTargetFieldChange?.("subject")}
+                  className={`px-3 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
+                    targetField === "subject"
+                      ? "bg-slate-900 text-white shadow-2xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  Subjek Email
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onTargetFieldChange?.("preheader")}
+                  className={`px-3 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
+                    targetField === "preheader"
+                      ? "bg-slate-900 text-white shadow-2xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  Preheader
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onTargetFieldChange?.("content")}
+                  className={`px-3 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
+                    targetField === "content"
+                      ? "bg-slate-900 text-white shadow-2xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  Isi Pesan
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Search bar */}
           <div className="mt-3 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -122,7 +171,7 @@ export const MergeTagsModal: React.FC<MergeTagsModalProps> = ({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Cari variabel (contoh: nama, email, diskon, voucher)..."
-              className="w-full h-10 pl-9 pr-4 rounded-xl border border-slate-200 bg-white text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 shadow-2xs"
+              className="w-full h-10 pl-9 pr-4 rounded-xl border border-slate-200 bg-white text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-800 focus:ring-1 focus:ring-slate-800 shadow-2xs transition"
             />
           </div>
 
@@ -138,7 +187,7 @@ export const MergeTagsModal: React.FC<MergeTagsModalProps> = ({
                   onClick={() => setActiveCategory(cat.id)}
                   className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 ${
                     isActive
-                      ? "bg-indigo-600 text-white shadow-2xs"
+                      ? "bg-slate-900 text-white shadow-2xs"
                       : "bg-slate-100 hover:bg-slate-200/80 text-slate-600"
                   }`}
                 >
@@ -160,7 +209,7 @@ export const MergeTagsModal: React.FC<MergeTagsModalProps> = ({
           </div>
           <form onSubmit={handleInsertCustom} className="flex items-center gap-1.5">
             <div className="relative">
-              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 font-mono text-xs text-indigo-600 font-bold">
+              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 font-mono text-xs text-slate-500 font-bold">
                 {"{{"}
               </span>
               <input
@@ -168,15 +217,15 @@ export const MergeTagsModal: React.FC<MergeTagsModalProps> = ({
                 value={customTagInput}
                 onChange={(e) => setCustomTagInput(e.target.value)}
                 placeholder="poin_reward"
-                className="h-8 pl-7 pr-7 rounded-lg border border-slate-200 bg-white text-xs font-mono text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 w-36 sm:w-44"
+                className="h-8 pl-7 pr-7 rounded-lg border border-slate-200 bg-white text-xs font-mono text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-slate-800 w-36 sm:w-44"
               />
-              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 font-mono text-xs text-indigo-600 font-bold">
+              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 font-mono text-xs text-slate-500 font-bold">
                 {"}}"}
               </span>
             </div>
             <button
               type="submit"
-              className="h-8 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center gap-1 transition cursor-pointer shadow-2xs"
+              className="h-8 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium flex items-center gap-1 transition cursor-pointer shadow-2xs"
             >
               <Plus className="h-3.5 w-3.5" />
               <span>Sisipkan</span>
@@ -195,18 +244,18 @@ export const MergeTagsModal: React.FC<MergeTagsModalProps> = ({
               <div
                 key={item.tag}
                 onClick={() => handleInsert(item.tag)}
-                className="p-3.5 rounded-2xl border border-slate-200/90 hover:border-indigo-400 hover:bg-indigo-50/20 bg-white transition-all cursor-pointer flex flex-col justify-between group shadow-2xs"
+                className="p-3.5 rounded-xl border border-slate-200/90 hover:border-slate-400 hover:bg-slate-50/50 bg-white transition-all cursor-pointer flex flex-col justify-between group shadow-2xs"
               >
                 <div>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100 group-hover:bg-indigo-600 group-hover:text-white transition">
+                    <span className="font-mono text-xs font-semibold text-slate-800 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200 group-hover:bg-slate-900 group-hover:text-white group-hover:border-slate-900 transition">
                       {`{{${item.tag}}}`}
                     </span>
                     <span className="text-[10px] text-slate-400 font-medium">
                       {item.categoryName}
                     </span>
                   </div>
-                  <h4 className="text-xs font-bold text-slate-800 mt-2">
+                  <h4 className="text-xs font-semibold text-slate-900 mt-2">
                     {item.label}
                   </h4>
                   <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
@@ -218,7 +267,7 @@ export const MergeTagsModal: React.FC<MergeTagsModalProps> = ({
                   <span className="text-slate-400 truncate">
                     Contoh: <strong className="text-slate-700 font-medium">"{item.sample}"</strong>
                   </span>
-                  <span className="text-indigo-600 font-semibold flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition shrink-0 ml-2">
+                  <span className="text-slate-900 font-semibold flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition shrink-0 ml-2">
                     <Check className="h-3 w-3" /> Pilih
                   </span>
                 </div>

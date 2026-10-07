@@ -31,41 +31,38 @@ export const SAMPLE_RECIPIENTS: RecipientPreview[] = [
   },
 ];
 
-export const DEFAULT_TEMPLATE_CONTENT = `Hi {{first_name}},
+export const DEFAULT_TEMPLATE_CONTENT = "";
+export const DEFAULT_SUBJECT = "";
+export const DEFAULT_PREHEADER = "";
 
-We have some exciting news to share with you this month. Our team has been working hard to bring you new features and improvements that we think you'll love.
+export const DEFAULT_WA_CONTENT = `Halo kak *{{first_name}}*, salam hangat dari *{{org_name}}*.
 
-Here's what's new:
-• **Feature one** — improved performance and reliability
-• **Feature two** — new dashboard with better insights
-• **Feature three** — easier contact management
+Kami ingin menginformasikan bahwa ada pembaruan fitur untuk akun Anda:
+• *Peningkatan Kecepatan*: Pengiriman pesan kini lebih cepat
+• *Laporan Analitik Real-time*: Pantau performa dan konversi langsung
+• *Dukungan Multi-Channel*: Integrasi Email, WhatsApp, dan Telegram
 
-We hope these updates make your experience even better. As always, feel free to reach out if you have any questions.
-
-Best regards,
-The {{org_name}} Team
-
----
-You received this email because you're subscribed to our newsletter updates. If you no longer wish to receive these emails, you can unsubscribe at {{unsubscribe_link}}.`;
-
-export const DEFAULT_SUBJECT = "Your monthly update is here 📩";
-
-export const DEFAULT_PREHEADER = "Simak fitur terbaru, ringkasan performa dashboard, dan peningkatan layanan kami bulan ini.";
-
-export const DEFAULT_WA_CONTENT = `Halo kak *{{first_name}}*, salam hangat dari *{{org_name}}*! 👋
-
-Kami ingin menginformasikan bahwa ada pembaruan fitur eksklusif untuk akun Anda:
-• *Peningkatan Kecepatan*: Pengiriman pesan kini 2x lebih cepat
-• *Laporan Analitik Real-time*: Pantau CTR dan konversi langsung
-• *Dukungan Multi-Channel*: Integrasi Email, WhatsApp & Telegram
-
-Jika ada pertanyaan atau butuh panduan, silakan balas chat ini ya kak!
+Jika ada pertanyaan atau butuh panduan, silakan balas chat ini.
 
 Terima kasih,
 _Tim {{org_name}}_`;
 
 /**
- * Replace merge tags in text with actual recipient / organization data
+ * Detect if text content is already raw HTML email
+ */
+export function isRawHtml(content: string): boolean {
+  if (!content) return false;
+  const trimmed = content.trim();
+  return (
+    trimmed.startsWith("<!DOCTYPE") ||
+    trimmed.startsWith("<html") ||
+    /<(?:table|div|p|h[1-6]|span|a|b|strong|i|em|section|header|footer)\b[^>]*>/i.test(trimmed)
+  );
+}
+
+/**
+ * Comprehensive Merge Tag Interpolation
+ * Supports all tags from contacts, businesses, commerce, dates, and links.
  */
 export function interpolateMergeTags(
   text: string,
@@ -74,23 +71,77 @@ export function interpolateMergeTags(
 ): string {
   if (!text) return "";
 
+  const now = new Date();
   const replacements: Record<string, string> = {
-    first_name: recipient.firstName,
-    last_name: recipient.lastName,
+    // Contact details
     nama: recipient.name,
     name: recipient.name,
+    full_name: recipient.name,
+    first_name: recipient.firstName,
+    last_name: recipient.lastName,
     email: recipient.email,
     phone: recipient.phone,
     telepon: recipient.phone,
     company: recipient.company,
     perusahaan: recipient.company,
+    sapaan: "Bpk.",
+    kota: "Jakarta Selatan",
+    gender: "Laki-laki",
+
+    // Organization / Sender details
     org_name: orgName,
+    company_name: orgName,
+    sender_name: `Tim ${orgName}`,
+    support_email: "support@acmecorp.co",
+    support_phone: "+62 811-2233-4455",
+    website_url: "https://acmecorp.co",
+    alamat_kantor: "PT Acme Digital Nusantara, Jakarta, Indonesia",
+
+    // Commerce / Promo details
+    kode_promo: "PROMO2026",
+    voucher: "PROMO2026",
+    diskon: "30%",
+    order_id: "INV-2026-0988",
+    nama_produk: "Paket Premium Annual Pro",
+    total_belanja: "Rp 750.000",
+    batas_waktu: "Pukul 23:59 WIB malam ini",
+    tanggal_kadaluarsa: "31 Oktober 2026",
+
+    // Datetime
+    tanggal_hari_ini: now.toLocaleDateString("id-ID", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }),
+    hari: now.toLocaleDateString("id-ID", { weekday: "long" }),
+    bulan: now.toLocaleDateString("id-ID", { month: "long" }),
+    bulan_ini: now.toLocaleDateString("id-ID", { month: "long" }),
+    tahun: now.getFullYear().toString(),
+    tahun_ini: now.getFullYear().toString(),
+    jam: now.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }),
+
+    // Links & Utilities
     unsubscribe_link: "#unsubscribe",
+    cta_link: "https://acmecorp.co/promo",
+    web_view_link: "#view-online",
+    otp: "849201",
   };
 
-  return text.replace(/\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}/g, (match, tagKey) => {
+  // Merge any dynamic custom attributes from recipient simulation
+  if (recipient.customAttributes) {
+    Object.entries(recipient.customAttributes).forEach(([k, v]) => {
+      replacements[k.toLowerCase()] = v;
+    });
+  }
+
+  return text.replace(/\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}/g, (_, tagKey) => {
     const key = tagKey.toLowerCase();
-    return replacements[key] !== undefined ? replacements[key] : match;
+    if (replacements[key] !== undefined) {
+      return replacements[key];
+    }
+    // Clean fallback for custom tags
+    const readable = key.replace(/_/g, " ");
+    return readable.charAt(0).toUpperCase() + readable.slice(1);
   });
 }
 
@@ -186,7 +237,6 @@ export function applyToolbarAction(
     }
 
     case "strikethrough": {
-      // WhatsApp strikethrough (~text~)
       if (selectedText) {
         if (selectedText.startsWith("~") && selectedText.endsWith("~") && selectedText.length >= 2) {
           const unwrapped = selectedText.slice(1, -1);
@@ -209,7 +259,6 @@ export function applyToolbarAction(
     }
 
     case "code": {
-      // WhatsApp monospace (```text```)
       const wrapChar = "```";
       if (selectedText) {
         if (selectedText.startsWith(wrapChar) && selectedText.endsWith(wrapChar) && selectedText.length >= 6) {
@@ -276,23 +325,20 @@ export function applyToolbarAction(
 
     case "bullet": {
       const lineStart = currentValue.lastIndexOf("\n", start - 1) + 1;
-      const lineEnd = currentValue.indexOf("\n", end === start ? start : end - 1);
+      const lineEnd = currentValue.indexOf("\n", start);
       const effectiveLineEnd = lineEnd === -1 ? currentValue.length : lineEnd;
-      const chunk = currentValue.substring(lineStart, effectiveLineEnd);
-      const lines = chunk.split("\n");
+      const currentLine = currentValue.substring(lineStart, effectiveLineEnd);
 
-      const allBulleted = lines.every((l) => l.trim().startsWith("• ") || l.trim().startsWith("- "));
-      const modifiedLines = lines.map((l) => {
-        if (allBulleted) {
-          return l.replace(/^[•-]\s*/, "");
-        }
-        return l.trim() ? `• ${l.replace(/^[•-]\s*/, "")}` : l;
-      });
+      let updatedLine = currentLine;
+      if (currentLine.startsWith("• ")) {
+        updatedLine = currentLine.replace(/^•\s*/, "");
+      } else {
+        updatedLine = `• ${currentLine}`;
+      }
 
-      const updatedChunk = modifiedLines.join("\n");
-      newText = currentValue.substring(0, lineStart) + updatedChunk + currentValue.substring(effectiveLineEnd);
-      newCursorStart = lineStart;
-      newCursorEnd = lineStart + updatedChunk.length;
+      newText = currentValue.substring(0, lineStart) + updatedLine + currentValue.substring(effectiveLineEnd);
+      newCursorStart = lineStart + updatedLine.length;
+      newCursorEnd = newCursorStart;
       break;
     }
 
@@ -328,18 +374,18 @@ export function applyToolbarAction(
  * Inserts a tag (e.g. {{first_name}}) at cursor position
  */
 export function insertTagAtCursor(
-  textarea: HTMLTextAreaElement | null,
+  targetElement: HTMLTextAreaElement | HTMLInputElement | null,
   currentValue: string,
   tag: string
 ): string {
   const formattedTag = tag.startsWith("{{") ? tag : `{{${tag}}}`;
 
-  if (!textarea) {
+  if (!targetElement) {
     return currentValue ? `${currentValue} ${formattedTag}` : formattedTag;
   }
 
-  const start = textarea.selectionStart;
-  const end = textarea.selectionEnd;
+  const start = targetElement.selectionStart ?? currentValue.length;
+  const end = targetElement.selectionEnd ?? currentValue.length;
 
   const newValue =
     currentValue.substring(0, start) +
@@ -347,8 +393,37 @@ export function insertTagAtCursor(
     currentValue.substring(end);
 
   setTimeout(() => {
-    textarea.focus();
+    targetElement.focus();
     const newCursor = start + formattedTag.length;
+    targetElement.setSelectionRange(newCursor, newCursor);
+  }, 0);
+
+  return newValue;
+}
+
+/**
+ * Inserts custom HTML snippet at cursor position in text editor
+ */
+export function insertHtmlSnippetAtCursor(
+  textarea: HTMLTextAreaElement | null,
+  currentValue: string,
+  snippet: string
+): string {
+  if (!textarea) {
+    return currentValue ? `${currentValue}\n\n${snippet}` : snippet;
+  }
+
+  const start = textarea.selectionStart ?? currentValue.length;
+  const end = textarea.selectionEnd ?? currentValue.length;
+
+  const newValue =
+    currentValue.substring(0, start) +
+    snippet +
+    currentValue.substring(end);
+
+  setTimeout(() => {
+    textarea.focus();
+    const newCursor = start + snippet.length;
     textarea.setSelectionRange(newCursor, newCursor);
   }, 0);
 
@@ -367,7 +442,6 @@ export function parseInlineFormatting(text: string): React.ReactNode {
   return parts.map((part, index) => {
     if (!part) return null;
 
-    // 1. Link [text](url)
     const linkMatch = part.match(/^\[(.*?)\]\((.*?)\)$/);
     if (linkMatch) {
       return React.createElement(
@@ -383,7 +457,6 @@ export function parseInlineFormatting(text: string): React.ReactNode {
       );
     }
 
-    // 2. Underline <u>text</u>
     const underlineMatch = part.match(/^\<u\>(.*?)\<\/u\>$/);
     if (underlineMatch) {
       return React.createElement(
@@ -396,7 +469,6 @@ export function parseInlineFormatting(text: string): React.ReactNode {
       );
     }
 
-    // 3. Bold **text**
     const boldMatch = part.match(/^\*\*(.*?)\*\*$/);
     if (boldMatch) {
       return React.createElement(
@@ -409,7 +481,6 @@ export function parseInlineFormatting(text: string): React.ReactNode {
       );
     }
 
-    // 4. Italic *text*
     const italicMatch = part.match(/^\*(.*?)\*$/);
     if (italicMatch && !part.startsWith("**")) {
       return React.createElement(
@@ -422,7 +493,6 @@ export function parseInlineFormatting(text: string): React.ReactNode {
       );
     }
 
-    // Plain text
     return React.createElement("span", { key: index }, part);
   });
 }
@@ -433,14 +503,12 @@ export function parseInlineFormatting(text: string): React.ReactNode {
 export function parseWhatsAppFormatting(text: string): React.ReactNode {
   if (!text) return null;
 
-  // Regex matches: ```code```, *bold*, _italic_, ~strike~
   const pattern = /(```[\s\S]*?```|\*[^*\n]+?\*|_[^_\n]+?_|~[^~\n]+?~)/g;
   const parts = text.split(pattern);
 
   return parts.map((part, index) => {
     if (!part) return null;
 
-    // Monospace ```code```
     if (part.startsWith("```") && part.endsWith("```") && part.length >= 6) {
       const codeContent = part.slice(3, -3);
       return React.createElement(
@@ -453,7 +521,6 @@ export function parseWhatsAppFormatting(text: string): React.ReactNode {
       );
     }
 
-    // Bold *text*
     if (part.startsWith("*") && part.endsWith("*") && part.length >= 2) {
       const boldContent = part.slice(1, -1);
       return React.createElement(
@@ -466,7 +533,6 @@ export function parseWhatsAppFormatting(text: string): React.ReactNode {
       );
     }
 
-    // Italic _text_
     if (part.startsWith("_") && part.endsWith("_") && part.length >= 2) {
       const italicContent = part.slice(1, -1);
       return React.createElement(
@@ -479,7 +545,6 @@ export function parseWhatsAppFormatting(text: string): React.ReactNode {
       );
     }
 
-    // Strikethrough ~text~
     if (part.startsWith("~") && part.endsWith("~") && part.length >= 2) {
       const strikeContent = part.slice(1, -1);
       return React.createElement(
@@ -498,7 +563,7 @@ export function parseWhatsAppFormatting(text: string): React.ReactNode {
 
 /**
  * Mailchimp-Grade HTML Email Compiler
- * Includes Brand Bar, Preheader, Formatted Body, Bulletproof CTA Button, and Social Icons Footer
+ * Realistic, clean, email client-ready without artificial cards or tacky mockups.
  */
 export function compileTemplateToEmailHtml({
   subject,
@@ -508,11 +573,16 @@ export function compileTemplateToEmailHtml({
   senderEmail = "hello@acmecorp.co",
   recipient = SAMPLE_RECIPIENTS[0],
   brandColor = "#4F46E5",
+  // Custom Logo Props
+  enableLogo = false,
+  logoUrl = "",
+  logoWidth = 140,
+  logoAlign = "center",
   enableCta = false,
-  ctaText = "Klaim Voucher Sekarang 🚀",
+  ctaText = "Klaim Voucher Sekarang",
   ctaUrl = "https://tokoonline.com/promo",
   ctaColor = "#4F46E5",
-  enableSocial = true,
+  enableSocial = false,
   websiteUrl = "https://acmecorp.co",
   instagramUrl = "https://instagram.com/acmecorp",
   whatsappUrl = "https://wa.me/6281234567890",
@@ -525,6 +595,10 @@ export function compileTemplateToEmailHtml({
   senderEmail?: string;
   recipient?: RecipientPreview;
   brandColor?: string;
+  enableLogo?: boolean;
+  logoUrl?: string;
+  logoWidth?: number;
+  logoAlign?: "left" | "center" | "right";
   enableCta?: boolean;
   ctaText?: string;
   ctaUrl?: string;
@@ -535,9 +609,51 @@ export function compileTemplateToEmailHtml({
   whatsappUrl?: string;
   footerAddress?: string;
 }): string {
-  const compiledSubj = interpolateMergeTags(subject, recipient, orgName);
-  const compiledContent = interpolateMergeTags(content, recipient, orgName);
+  const compiledSubj = interpolateMergeTags(subject || "", recipient, orgName);
   const compiledPreheader = preheader ? interpolateMergeTags(preheader, recipient, orgName) : "";
+
+  const logoHtml =
+    enableLogo && logoUrl
+      ? `<div style="text-align: ${logoAlign}; margin-bottom: 24px;"><img src="${logoUrl}" alt="${orgName}" style="max-width: ${logoWidth}px; height: auto; display: inline-block;" /></div>`
+      : "";
+
+  // If content is empty
+  if (!content || !content.trim()) {
+    return "";
+  }
+
+  // 1. If content is already complete HTML document
+  if (content.trim().toLowerCase().startsWith("<!doctype") || content.trim().toLowerCase().startsWith("<html")) {
+    return interpolateMergeTags(content, recipient, orgName);
+  }
+
+  // 2. If content is raw HTML fragment
+  if (isRawHtml(content)) {
+    const interpolatedBody = interpolateMergeTags(content, recipient, orgName);
+    return `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${compiledSubj}</title>
+  <style>
+    body { margin: 0; padding: 0; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    img { border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }
+    table { border-collapse: collapse !important; }
+  </style>
+</head>
+<body style="margin: 0; padding: 24px 16px; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
+  ${compiledPreheader ? `<div style="display: none; max-height: 0; overflow: hidden; mso-hide: all; font-size: 1px; line-height: 1px; color: #f8fafc;">${compiledPreheader}</div>` : ""}
+  <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 32px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+    ${logoHtml}
+    ${interpolatedBody}
+  </div>
+</body>
+</html>`;
+  }
+
+  // 3. If content is plain text / markdown: convert cleanly
+  const compiledContent = interpolateMergeTags(content, recipient, orgName);
 
   const inlineToHtml = (str: string): string => {
     return str
@@ -549,7 +665,6 @@ export function compileTemplateToEmailHtml({
 
   const lines = compiledContent.split("\n");
   const bodyHtmlParts: string[] = [];
-
   let inList = false;
 
   for (let i = 0; i < lines.length; i++) {
@@ -606,7 +721,7 @@ export function compileTemplateToEmailHtml({
       bodyHtmlParts.push(`<div style="height: 12px;"></div>`);
     } else {
       bodyHtmlParts.push(
-        `<p style="margin: 0 0 14px 0; color: #334155; font-size: 14px; line-height: 1.6; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">${inlineToHtml(trimmed)}</p>`
+        `<p style="margin: 0 0 14px 0; color: #334155; font-size: 14px; line-height: 1.6;">${inlineToHtml(trimmed)}</p>`
       );
     }
   }
@@ -617,7 +732,6 @@ export function compileTemplateToEmailHtml({
 
   const emailBodyHtml = bodyHtmlParts.join("\n");
 
-  // Mailchimp Bulletproof CTA Button HTML
   const ctaButtonHtml = enableCta
     ? `
     <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 28px 0 20px 0;">
@@ -625,8 +739,8 @@ export function compileTemplateToEmailHtml({
         <td align="center">
           <table role="presentation" border="0" cellpadding="0" cellspacing="0">
             <tr>
-              <td align="center" style="border-radius: 9999px; background-color: ${ctaColor};">
-                <a href="${ctaUrl}" target="_blank" style="font-size: 14px; font-family: inherit; font-weight: 700; color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 9999px; display: inline-block; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+              <td align="center" style="border-radius: 8px; background-color: ${ctaColor};">
+                <a href="${ctaUrl}" target="_blank" style="font-size: 14px; font-family: inherit; font-weight: 700; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 8px; display: inline-block;">
                   ${ctaText}
                 </a>
               </td>
@@ -637,13 +751,12 @@ export function compileTemplateToEmailHtml({
     </table>`
     : "";
 
-  // Social Links Bar
   const socialLinksHtml = enableSocial
     ? `
-    <div style="margin: 16px 0; text-align: center;">
-      ${websiteUrl ? `<a href="${websiteUrl}" target="_blank" style="color: #64748b; margin: 0 10px; font-size: 12px; font-weight: 600; text-decoration: none;">🌐 Website</a>` : ""}
-      ${instagramUrl ? `<a href="${instagramUrl}" target="_blank" style="color: #64748b; margin: 0 10px; font-size: 12px; font-weight: 600; text-decoration: none;">📸 Instagram</a>` : ""}
-      ${whatsappUrl ? `<a href="${whatsappUrl}" target="_blank" style="color: #64748b; margin: 0 10px; font-size: 12px; font-weight: 600; text-decoration: none;">💬 WhatsApp</a>` : ""}
+    <div style="margin: 20px 0 10px; text-align: center;">
+      ${websiteUrl ? `<a href="${websiteUrl}" target="_blank" style="color: #64748b; margin: 0 8px; font-size: 12px; font-weight: 600; text-decoration: none;">Website</a>` : ""}
+      ${instagramUrl ? `<a href="${instagramUrl}" target="_blank" style="color: #64748b; margin: 0 8px; font-size: 12px; font-weight: 600; text-decoration: none;">Instagram</a>` : ""}
+      ${whatsappUrl ? `<a href="${whatsappUrl}" target="_blank" style="color: #64748b; margin: 0 8px; font-size: 12px; font-weight: 600; text-decoration: none;">WhatsApp</a>` : ""}
     </div>`
     : "";
 
@@ -654,39 +767,30 @@ export function compileTemplateToEmailHtml({
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${compiledSubj}</title>
 </head>
-<body style="margin: 0; padding: 24px 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
-  ${compiledPreheader ? `<div style="display: none; max-height: 0; overflow: hidden; mso-hide: all;">${compiledPreheader}</div>` : ""}
+<body style="margin: 0; padding: 24px 16px; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
+  ${compiledPreheader ? `<div style="display: none; max-height: 0; overflow: hidden; mso-hide: all; font-size: 1px; line-height: 1px; color: #f8fafc;">${compiledPreheader}</div>` : ""}
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f8fafc;">
     <tr>
-      <td align="center" style="padding: 12px;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
-          <!-- Header Brand Bar -->
+      <td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width: 600px; background-color: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
           <tr>
-            <td style="padding: 28px 32px 20px 32px; border-bottom: 1px solid #f1f5f9;">
-              <span style="background-color: ${brandColor}; color: #ffffff; font-weight: 800; font-size: 11px; letter-spacing: 1.5px; padding: 6px 14px; border-radius: 6px; display: inline-block; text-transform: uppercase;">
-                ${orgName.toUpperCase()}
-              </span>
-            </td>
-          </tr>
-          <!-- Body Content -->
-          <tr>
-            <td style="padding: 32px 32px 16px 32px; color: #334155; font-size: 14px; line-height: 1.6;">
+            <td style="padding: 32px 32px 20px 32px; color: #334155; font-size: 14px; line-height: 1.6;">
+              ${logoHtml}
               ${emailBodyHtml}
               ${ctaButtonHtml}
             </td>
           </tr>
-          <!-- Footer -->
-          <tr>
-            <td style="padding: 24px 32px; background-color: #f8fafc; border-top: 1px solid #e2e8f0; text-align: center;">
+          ${
+            enableSocial || footerAddress
+              ? `<tr>
+            <td style="padding: 20px 32px 24px 32px; background-color: #f8fafc; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #94a3b8;">
               ${socialLinksHtml}
-              <p style="margin: 8px 0 4px 0; font-size: 11px; color: #94a3b8;">
-                ${footerAddress}
-              </p>
-              <p style="margin: 0; font-size: 11px; color: #94a3b8;">
-                Email ini dikirim oleh <strong>${orgName}</strong> &lt;${senderEmail}&gt;. Jika Anda ingin berhenti berlangganan, silakan <a href="#unsubscribe" style="color: #64748b; text-decoration: underline;">Klik di Sini</a>.
-              </p>
+              ${footerAddress ? `<p style="margin: 6px 0 4px 0;">${footerAddress}</p>` : ""}
+              <p style="margin: 0;">Dikirim oleh <strong>${orgName}</strong> &lt;${senderEmail}&gt; • <a href="#unsubscribe" style="color: #64748b; text-decoration: underline;">Berhenti berlangganan</a></p>
             </td>
-          </tr>
+          </tr>`
+              : ""
+          }
         </table>
       </td>
     </tr>
@@ -694,3 +798,96 @@ export function compileTemplateToEmailHtml({
 </body>
 </html>`;
 }
+
+export interface ExtractedTextBlock {
+  id: string;
+  tag: string;
+  label: string;
+  text: string;
+}
+
+/**
+ * Extracts visible text strings (headings, paragraphs, button labels, list items) from HTML email
+ * so users can edit text directly in visual/form mode without dealing with raw HTML tags.
+ */
+export function extractTextBlocksFromHtml(html: string): ExtractedTextBlock[] {
+  if (!html || typeof window === "undefined") return [];
+
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+
+    const ignoreTags = new Set([
+      "SCRIPT",
+      "STYLE",
+      "NOSCRIPT",
+      "TEMPLATE",
+      "XML",
+      "META",
+      "HEAD",
+      "TITLE",
+    ]);
+
+    const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const parent = node.parentElement;
+        if (!parent || ignoreTags.has(parent.tagName.toUpperCase())) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+
+    const results: ExtractedTextBlock[] = [];
+    const seenTexts = new Set<string>();
+    let node: Node | null;
+    let index = 0;
+
+    while ((node = walker.nextNode())) {
+      const rawText = (node.nodeValue || "").trim();
+      if (!rawText || rawText.length < 2) continue;
+      // Filter out conditional comments or XML fragments
+      if (rawText.startsWith("<!--") || rawText.endsWith("-->")) continue;
+      if (rawText.startsWith("<![endif]") || rawText.startsWith("<!--[if") || rawText.includes("mso-")) continue;
+      if (rawText.startsWith("<") && rawText.endsWith(">")) continue;
+      if (seenTexts.has(rawText)) continue;
+
+      seenTexts.add(rawText);
+
+      const parentTag = (node.parentElement?.tagName || "div").toLowerCase();
+      let label = "Teks";
+      if (parentTag === "h1") label = "Judul Utama (H1)";
+      else if (parentTag === "h2") label = "Subjudul (H2)";
+      else if (parentTag === "h3" || parentTag === "h4") label = "Judul Bagian";
+      else if (parentTag === "a" || parentTag === "button") label = "Tombol / Tautan";
+      else if (parentTag === "p") label = "Paragraf";
+      else if (parentTag === "li") label = "Poin Daftar";
+      else if (parentTag === "strong" || parentTag === "b") label = "Teks Tebal";
+      else if (parentTag === "center") label = "Teks Tombol / Judul";
+
+      results.push({
+        id: `txt-${index++}-${parentTag}`,
+        tag: parentTag,
+        label,
+        text: rawText,
+      });
+    }
+
+    return results;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Replaces a specific text occurrence in the HTML document
+ */
+export function replaceTextInHtml(
+  html: string,
+  targetText: string,
+  newText: string
+): string {
+  if (!html || !targetText || targetText === newText) return html;
+  return html.split(targetText).join(newText);
+}
+
