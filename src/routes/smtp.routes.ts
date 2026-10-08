@@ -7,6 +7,9 @@ import {
 } from "../controllers/smtp.controller";
 import { authenticateJWT } from "../middlewares/auth.middleware";
 import { requirePermission } from "../middlewares/rbac.middleware";
+import { asyncHandler } from "../shared/middleware/asyncHandler";
+import { validate } from "../shared/middleware/validate";
+import { saveSmtpSchema, testSmtpSchema } from "../schemas/smtp.schema";
 
 const router = Router();
 
@@ -25,7 +28,7 @@ router.use(authenticateJWT);
  *       200:
  *         description: Konfigurasi SMTP berhasil diambil
  */
-router.get("/", requirePermission("channels", "view"), getSmtpConfigController);
+router.get("/", requirePermission("channels", "view"), asyncHandler(getSmtpConfigController));
 
 /**
  * @openapi
@@ -54,7 +57,12 @@ router.get("/", requirePermission("channels", "view"), getSmtpConfigController);
  *       200:
  *         description: Konfigurasi SMTP berhasil disimpan
  */
-router.post("/", requirePermission("channels", "edit"), saveSmtpConfigController);
+router.post(
+    "/",
+    requirePermission("channels", "edit"),
+    validate({ body: saveSmtpSchema }),
+    asyncHandler(saveSmtpConfigController)
+);
 
 /**
  * @openapi
@@ -79,7 +87,12 @@ router.post("/", requirePermission("channels", "edit"), saveSmtpConfigController
  *       400:
  *         description: Handshake SMTP gagal atau belum dikonfigurasi
  */
-router.post("/test", requirePermission("channels", "edit"), testSmtpConnectionController);
+router.post(
+    "/test",
+    requirePermission("channels", "edit"),
+    validate({ body: testSmtpSchema }),
+    asyncHandler(testSmtpConnectionController)
+);
 
 /**
  * @openapi
@@ -93,6 +106,6 @@ router.post("/test", requirePermission("channels", "edit"), testSmtpConnectionCo
  *       200:
  *         description: Konfigurasi SMTP berhasil dihapus
  */
-router.delete("/", requirePermission("channels", "delete"), deleteSmtpConfigController);
+router.delete("/", requirePermission("channels", "delete"), asyncHandler(deleteSmtpConfigController));
 
 export default router;

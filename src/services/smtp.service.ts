@@ -1,6 +1,7 @@
 import nodemailer from "nodemailer";
 import prisma from "../lib/prisma";
 import { logAudit } from "../lib/audit";
+import { AppError } from "../shared/errors/AppError";
 import { SaveSmtpInput } from "../schemas/smtp.schema";
 
 // Helper untuk membuat transporter Nodemailer berdasarkan konfigurasi
@@ -64,7 +65,7 @@ export const saveSmtpConfig = async (
         : existing?.passwordEncrypted;
 
     if (!passwordEncrypted) {
-        throw new Error("PASSWORD_REQUIRED");
+        throw new AppError("Password / App Password wajib diisi untuk konfigurasi awal", 400);
     }
 
     const config = await prisma.smtpConfig.upsert({
@@ -114,7 +115,7 @@ export const testSmtpConnection = async (
     });
 
     if (!config) {
-        throw new Error("SMTP_NOT_CONFIGURED");
+        throw new AppError("Server SMTP belum dikonfigurasi. Harap simpan pengaturan terlebih dahulu.", 400);
     }
 
     const transporter = createTransporter(config);
@@ -124,7 +125,7 @@ export const testSmtpConnection = async (
         await transporter.verify();
     } catch (err: any) {
         console.error("[SMTP Handshake Error]:", err);
-        throw new Error(`SMTP_HANDSHAKE_FAILED: ${err.message}`);
+        throw new AppError("Gagal terhubung ke server SMTP. Periksa Host, Port, atau Username/Password Anda.", 400);
     }
 
     // Langkah B: Kirim email test sungguhan ke inbox tujuan
@@ -173,7 +174,7 @@ export const testSmtpConnection = async (
         };
     } catch (err: any) {
         console.error("[SMTP Send Mail Error]:", err);
-        throw new Error(`SMTP_SEND_FAILED: ${err.message}`);
+        throw new AppError("Pengiriman email uji coba gagal", 500);
     }
 };
 
@@ -184,7 +185,7 @@ export const deleteSmtpConfig = async (tenantId: number, actorId: number) => {
     });
 
     if (!config) {
-        throw new Error("SMTP_NOT_CONFIGURED");
+        throw new AppError("Konfigurasi SMTP memang belum ada", 400);
     }
 
     await prisma.smtpConfig.delete({
