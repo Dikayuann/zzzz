@@ -10,6 +10,13 @@ import {
 } from "../controllers/list.controller";
 import { authenticateJWT } from "../middlewares/auth.middleware";
 import { requirePermission } from "../middlewares/rbac.middleware";
+import { asyncHandler } from "../shared/middleware/asyncHandler";
+import { validate } from "../shared/middleware/validate";
+import {
+    createListSchema,
+    updateListSchema,
+    addContactsToListSchema,
+} from "../schemas/list.schema";
 
 const router = Router();
 
@@ -28,7 +35,7 @@ router.use(authenticateJWT);
  *       200:
  *         description: Berhasil mengambil daftar list
  */
-router.get("/", requirePermission("contacts", "view"), getListsController);
+router.get("/", requirePermission("contacts", "view"), asyncHandler(getListsController));
 
 /**
  * @openapi
@@ -49,7 +56,7 @@ router.get("/", requirePermission("contacts", "view"), getListsController);
  *       404:
  *         description: List tidak ditemukan
  */
-router.get("/:id", requirePermission("contacts", "view"), getListByIdController);
+router.get("/:id", requirePermission("contacts", "view"), asyncHandler(getListByIdController));
 
 /**
  * @openapi
@@ -75,7 +82,12 @@ router.get("/:id", requirePermission("contacts", "view"), getListByIdController)
  *       409:
  *         description: Nama list sudah digunakan
  */
-router.post("/", requirePermission("contacts", "create"), createListController);
+router.post(
+    "/",
+    requirePermission("contacts", "create"),
+    validate({ body: createListSchema }),
+    asyncHandler(createListController)
+);
 
 /**
  * @openapi
@@ -105,7 +117,12 @@ router.post("/", requirePermission("contacts", "create"), createListController);
  *       404:
  *         description: List tidak ditemukan
  */
-router.put("/:id", requirePermission("contacts", "edit"), updateListController);
+router.put(
+    "/:id",
+    requirePermission("contacts", "edit"),
+    validate({ body: updateListSchema }),
+    asyncHandler(updateListController)
+);
 
 /**
  * @openapi
@@ -126,7 +143,7 @@ router.put("/:id", requirePermission("contacts", "edit"), updateListController);
  *       404:
  *         description: List tidak ditemukan
  */
-router.delete("/:id", requirePermission("contacts", "delete"), deleteListController);
+router.delete("/:id", requirePermission("contacts", "delete"), asyncHandler(deleteListController));
 
 /**
  * @openapi
@@ -159,7 +176,12 @@ router.delete("/:id", requirePermission("contacts", "delete"), deleteListControl
  *       404:
  *         description: List tidak ditemukan
  */
-router.post("/:id/contacts", requirePermission("contacts", "edit"), addContactsToListController);
+router.post(
+    "/:id/contacts",
+    requirePermission("contacts", "edit"),
+    validate({ body: addContactsToListSchema }),
+    asyncHandler(addContactsToListController)
+);
 
 /**
  * @openapi
@@ -184,6 +206,10 @@ router.post("/:id/contacts", requirePermission("contacts", "edit"), addContactsT
  *       404:
  *         description: List tidak ditemukan
  */
-router.delete("/:id/contacts/:contactId", requirePermission("contacts", "edit"), removeContactFromListController);
+router.delete(
+    "/:id/contacts/:contactId",
+    requirePermission("contacts", "edit"),
+    asyncHandler(removeContactFromListController)
+);
 
 export default router;

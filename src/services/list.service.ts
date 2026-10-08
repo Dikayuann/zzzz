@@ -1,5 +1,6 @@
 import prisma from "../lib/prisma";
 import { logAudit } from "../lib/audit";
+import { AppError } from "../shared/errors/AppError";
 import { CreateListInput, UpdateListInput } from "../schemas/list.schema";
 
 export const getList = async (tenantId: number) => {
@@ -36,7 +37,7 @@ export const getListById = async (tenantId: number, listId: number) => {
     });
 
     if (!list) {
-        throw new Error("LIST_NOT_FOUND");
+        throw new AppError("List tidak ditemukan", 404);
     }
 
     return {
@@ -57,7 +58,7 @@ export const createList = async (tenantId: number, actorId: number, data: Create
     });
 
     if (existing) {
-        throw new Error("LIST_DUPLICATE");
+        throw new AppError("Nama list sudah digunakan", 409);
     }
 
     const list = await prisma.list.create({
@@ -67,6 +68,7 @@ export const createList = async (tenantId: number, actorId: number, data: Create
             description: data.description || null,
         },
     });
+
     await logAudit({
         tenantId,
         actorId,
@@ -77,10 +79,9 @@ export const createList = async (tenantId: number, actorId: number, data: Create
     });
 
     return list;
-}
+};
 
-
-// 4. Update list
+// Update list
 export const updateList = async (
     tenantId: number,
     actorId: number,
@@ -92,15 +93,15 @@ export const updateList = async (
     });
 
     if (!existing) {
-        throw new Error("LIST_NOT_FOUND");
+        throw new AppError("List tidak ditemukan", 404);
     }
 
     if (data.name && data.name !== existing.name) {
         const duplicate = await prisma.list.findFirst({
-            where: {tenantId, name: data.name, id: {not: listId}},
+            where: { tenantId, name: data.name, id: { not: listId } },
         });
         if (duplicate) {
-            throw new Error("LIST_DUPLICATE");
+            throw new AppError("Nama list sudah digunakan", 409);
         }
     }
 
@@ -108,7 +109,7 @@ export const updateList = async (
         where: { id: listId },
         data: {
             name: data.name,
-            description: data. description !== undefined ? data.description : undefined,
+            description: data.description !== undefined ? data.description : undefined,
         },
     });
 
@@ -131,12 +132,12 @@ export const deleteList = async (tenantId: number, actorId: number, listId: numb
     });
 
     if (!existing) {
-        throw new Error("LIST_NOT_FOUND");
+        throw new AppError("List tidak ditemukan", 404);
     }
 
     await prisma.list.delete({
         where: { id: listId },
-    })
+    });
 
     await logAudit({
         tenantId,
@@ -158,11 +159,11 @@ export const addContactToList = async (
     contactIds: number[]
 ) => {
     const list = await prisma.list.findFirst({
-      where: { id: listId, tenantId },
+        where: { id: listId, tenantId },
     });
 
     if (!list) {
-        throw new Error("LIST_NOT_FOUND");
+        throw new AppError("List tidak ditemukan", 404);
     }
 
     const validContacts = await prisma.contact.findMany({
@@ -171,11 +172,12 @@ export const addContactToList = async (
     });
 
     const dataToInsert = validContacts.map((c) => ({
-        listId, contactId: c.id,
+        listId,
+        contactId: c.id,
     }));
 
     // skipDuplicates agar tidak error jika kontak sudah ada di list
-    const result = await  prisma.listContact.createMany({
+    const result = await prisma.listContact.createMany({
         data: dataToInsert,
         skipDuplicates: true,
     });
@@ -188,8 +190,9 @@ export const addContactToList = async (
         entityId: listId,
         details: { addedCount: result.count, requested: contactIds.length },
     });
+
     return { addedCount: result.count };
-}
+};
 
 export const removeContactFromList = async (
     tenantId: number,
@@ -197,9 +200,13 @@ export const removeContactFromList = async (
     listId: number,
     contactId: number
 ) => {
-    const list = await prisma.list.findFirst({ where: { id: listId, tenantId }, });
+    const list = await prisma.list.findFirst({
+        where: { id: listId, tenantId },
+    });
 
-    if(!list) { throw new Error("LIST_NOT_FOUND"); }
+    if (!list) {
+        throw new AppError("List tidak ditemukan", 404);
+    }
 
     await prisma.listContact.deleteMany({
         where: {
@@ -216,5 +223,6 @@ export const removeContactFromList = async (
         entityId: listId,
         details: { contactId },
     });
+
     return { success: true };
 };
