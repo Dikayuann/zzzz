@@ -10,6 +10,15 @@ import {
 } from "../controllers/contact.controller";
 import { authenticateJWT } from "../middlewares/auth.middleware";
 import { requirePermission } from "../middlewares/rbac.middleware";
+import { asyncHandler } from "../shared/middleware/asyncHandler";
+import { validate } from "../shared/middleware/validate";
+import {
+    createContactSchema,
+    updateContactSchema,
+    contactQuerySchema,
+    bulkDeleteContactSchema,
+    importContactsSchema,
+} from "../schemas/contact.schema";
 
 const router = Router();
 
@@ -47,7 +56,11 @@ router.use(authenticateJWT);
  *       200:
  *         description: Berhasil mengambil daftar kontak
  */
-router.get("/", requirePermission("contacts", "view"), getContactsController);
+router.get("/",
+    requirePermission("contacts", "view"),
+    validate({ query: contactQuerySchema }),
+    asyncHandler(getContactsController),
+);
 
 /**
  * @openapi
@@ -68,7 +81,10 @@ router.get("/", requirePermission("contacts", "view"), getContactsController);
  *       404:
  *         description: Kontak tidak ditemukan
  */
-router.get("/:id", requirePermission("contacts", "view"), getContactByIdController);
+router.get("/:id",
+    requirePermission("contacts", "view"),
+    asyncHandler(getContactByIdController),
+);
 
 /**
  * @openapi
@@ -103,7 +119,11 @@ router.get("/:id", requirePermission("contacts", "view"), getContactByIdControll
  *       409:
  *         description: Kontak duplikat
  */
-router.post("/", requirePermission("contacts", "create"), createContactController);
+router.post("/",
+    requirePermission("contacts", "create"),
+    validate({ body: createContactSchema }),
+    asyncHandler(createContactController),
+);
 
 /**
  * @openapi
@@ -140,27 +160,12 @@ router.post("/", requirePermission("contacts", "create"), createContactControlle
  *       404:
  *         description: Kontak tidak ditemukan
  */
-router.put("/:id", requirePermission("contacts", "edit"), updateContactController);
+router.put("/:id",
+    requirePermission("contacts", "edit"),
+    validate({ body: updateContactSchema }),
+    asyncHandler(updateContactController),
+);
 
-/**
- * @openapi
- * /contacts/{id}:
- *   delete:
- *     summary: Hapus satu kontak (Soft Delete)
- *     tags: [Contacts]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: integer }
- *     responses:
- *       200:
- *         description: Kontak berhasil dihapus
- *       404:
- *         description: Kontak tidak ditemukan
- */
 /**
  * @openapi
  * /contacts/import:
@@ -194,10 +199,35 @@ router.put("/:id", requirePermission("contacts", "edit"), updateContactControlle
  *       200:
  *         description: Proses import kontak selesai
  */
-router.post("/import", requirePermission("contacts", "create"), importContactsController);
+router.post("/import",
+    requirePermission("contacts", "create"),
+    validate({ body: importContactsSchema }),
+    asyncHandler(importContactsController),
+);
 
-
-router.delete("/:id", requirePermission("contacts", "delete"), deleteContactController);
+/**
+ * @openapi
+ * /contacts/{id}:
+ *   delete:
+ *     summary: Hapus satu kontak (Soft Delete)
+ *     tags: [Contacts]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Kontak berhasil dihapus
+ *       404:
+ *         description: Kontak tidak ditemukan
+ */
+router.delete("/:id",
+    requirePermission("contacts", "delete"),
+    asyncHandler(deleteContactController),
+);
 
 /**
  * @openapi
@@ -223,6 +253,10 @@ router.delete("/:id", requirePermission("contacts", "delete"), deleteContactCont
  *       200:
  *         description: Kontak berhasil dihapus massal
  */
-router.post("/bulk-delete", requirePermission("contacts", "delete"), bulkDeleteContactsController);
+router.post("/bulk-delete",
+    requirePermission("contacts", "delete"),
+    validate({ body: bulkDeleteContactSchema }),
+    asyncHandler(bulkDeleteContactsController),
+);
 
 export default router;

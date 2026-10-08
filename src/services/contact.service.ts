@@ -1,5 +1,6 @@
 import prisma from "../lib/prisma";
 import { logAudit } from "../lib/audit";
+import { AppError } from "../shared/errors/AppError";
 import {
     CreateContactInput,
     UpdateContactInput,
@@ -136,7 +137,7 @@ export const getContactById = async (tenantId: number, contactId: number) => {
     });
 
     if (!contact) {
-        throw new Error("CONTACT_NOT_FOUND");
+        throw new AppError("Kontak tidak ditemukan", 404);
     }
 
     return formatContactResponse(contact);
@@ -161,7 +162,7 @@ export const createContact = async ( tenantId: number, actorId: number, data: Cr
         });
 
         if (existing) {
-            throw new Error("CONTACT_DUPLICATE");
+            throw new AppError("Kontak dengan email atau nomor WhatsApp ini sudah terdaftar", 409);
         }
     }
 
@@ -171,7 +172,7 @@ export const createContact = async ( tenantId: number, actorId: number, data: Cr
         const listExist = await prisma.list.findFirst({
            where: { id: data.listId, tenantId },
         });
-        if (!listExist) throw new Error("INVALID_LIST");
+        if (!listExist) throw new AppError("List yang dipilih tidak ditemukan", 400);
     }
 
     if (data.tagIds && data.tagIds.length > 0 ) {
@@ -179,7 +180,7 @@ export const createContact = async ( tenantId: number, actorId: number, data: Cr
             where: { id: { in: data.tagIds }, tenantId },
         });
         if (validTags.length !== data.tagIds.length) {
-            throw new Error("INVALID_TAGS");
+            throw new AppError("Satu atau lebih tag yang dipilih tidak valid", 400);
         }
     }
 
@@ -245,7 +246,7 @@ export const updateContact = async ( tenantId: number, actorId: number, contactI
     });
 
     if (!existing) {
-        throw new Error("CONTACT_NOT_FOUND");
+        throw new AppError("Kontak tidak ditemukan", 404);
     }
 
     const normalizedWA = normalizePhoneNumber(data.whatsappNumber);
@@ -267,7 +268,7 @@ export const updateContact = async ( tenantId: number, actorId: number, contactI
             },
         });
         if (conflict) {
-            throw new Error("CONTACT_DUPLICATE");
+            throw new AppError("Kontak dengan email atau nomor WhatsApp ini sudah terdaftar", 409);
         }
     }
 
@@ -276,7 +277,7 @@ export const updateContact = async ( tenantId: number, actorId: number, contactI
         const listExist = await prisma.list.findFirst({
             where: { id: data.listId, tenantId },
         });
-        if (!listExist) throw new Error("INVALID_LIST");
+        if (!listExist) throw new AppError("List yang dipilih tidak ditemukan", 400);
     }
 
     // validasi tags jika dikirim
@@ -285,7 +286,7 @@ export const updateContact = async ( tenantId: number, actorId: number, contactI
             where: { id: { in: data.tagIds }, tenantId },
         });
         if (validTags.length !== data.tagIds.length) {
-            throw new Error("INVALID_TAGS");
+            throw new AppError("Satu atau lebih tag yang dipilih tidak valid", 400);
         }
     }
 
@@ -347,7 +348,7 @@ export const deleteContact = async (tenantId: number, actorId: number, contactId
     });
 
     if (!existing) {
-        throw new Error("CONTACT_NOT_FOUND");
+        throw new AppError("Kontak tidak ditemukan", 404);
     }
 
     await prisma.contact.update({
@@ -398,7 +399,7 @@ export const importContacts = async ( tenantId:number, actorId: number, data: Im
     if (data.listId) {
         const listExist = await prisma.list.findFirst({ where: { id: data.listId, tenantId } });
 
-        if (!listExist) throw new Error("INVALID_LIST");
+        if (!listExist) throw new AppError("List yang dipilih tidak ditemukan", 400);
     }
 
     // validasi apakah semua tagIds valid milik tenant ini
@@ -406,7 +407,7 @@ export const importContacts = async ( tenantId:number, actorId: number, data: Im
         const validTags = await prisma.tag.findMany({ where: {id: { in: data.tagsIds }, tenantId},
         });
         if (validTags.length !== data.tagsIds.length) {
-            throw new Error("INVALID_TAGS");
+            throw new AppError("Satu atau lebih tag yang dipilih tidak valid", 400);
         }
     }
 
