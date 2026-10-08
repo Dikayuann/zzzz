@@ -47,6 +47,18 @@ Jika ada pertanyaan atau butuh panduan, silakan balas chat ini.
 Terima kasih,
 _Tim {{org_name}}_`;
 
+export const DEFAULT_TELEGRAM_CONTENT = `Halo kak *{{first_name}}*, salam hangat dari *{{org_name}}*! 🚀
+
+Kami ingin menginformasikan bahwa ada pembaruan fitur untuk akun Anda:
+• *Peningkatan Kecepatan*: Pengiriman pesan kini lebih cepat
+• *Laporan Analitik Real-time*: Pantau performa dan konversi langsung
+• *Dukungan Multi-Channel*: Integrasi Email, WhatsApp, dan Telegram
+
+Jika ada pertanyaan atau butuh panduan, silakan balas pesan ini.
+
+Terima kasih,
+_Tim {{org_name}}_`;
+
 /**
  * Detect if text content is already raw HTML email
  */

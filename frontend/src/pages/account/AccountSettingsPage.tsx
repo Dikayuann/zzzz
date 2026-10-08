@@ -676,7 +676,7 @@ export const AccountSettingsPage: React.FC = () => {
       {/* CHANGE PASSWORD MODAL */}
       {isPasswordModalOpen && (
         <div
-          className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
+          className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4 animate-in fade-in duration-150"
           onClick={() => {
             setIsPasswordModalOpen(false);
             setCurrentPassword("");

@@ -1,12 +1,14 @@
-import React from "react";
+import React, { useState, useMemo } from "react";
 import {
   TemplateHeader,
   TemplateEditorPanel,
   TemplateLivePreview,
   TemplateSelectorModal,
+  TestSendModal,
 } from "@/components/templates";
 import { MergeTagsModal } from "@/components/campaigns/MergeTagsModal";
 import { useTemplateEditor } from "@/hooks/useTemplateEditor";
+import { compileTemplateToEmailHtml } from "@/utils/templateParser";
 
 export const TemplatesPage: React.FC = () => {
   const {
@@ -20,6 +22,7 @@ export const TemplatesPage: React.FC = () => {
     setPreheader,
     content,
     setContent,
+    emailContent,
     recipient,
     setRecipient,
     savedTemplates,
@@ -67,6 +70,54 @@ export const TemplatesPage: React.FC = () => {
     handleSelectMergeTag,
   } = useTemplateEditor();
 
+  const [isTestSendModalOpen, setIsTestSendModalOpen] = useState(false);
+
+  // Compile full HTML email including logo, CTA button, and social footer
+  const compiledHtml = useMemo(() => {
+    return compileTemplateToEmailHtml({
+      subject,
+      preheader,
+      content: emailContent || content,
+      orgName: "Acme Corp",
+      senderEmail: "hello@acmecorp.co",
+      recipient,
+      brandColor,
+      enableLogo,
+      logoUrl,
+      logoWidth,
+      logoAlign,
+      enableCta,
+      ctaText,
+      ctaUrl,
+      ctaColor,
+      enableSocial,
+      websiteUrl,
+      instagramUrl,
+      whatsappUrl,
+      footerAddress,
+    });
+  }, [
+    subject,
+    preheader,
+    content,
+    emailContent,
+    recipient,
+    brandColor,
+    enableLogo,
+    logoUrl,
+    logoWidth,
+    logoAlign,
+    enableCta,
+    ctaText,
+    ctaUrl,
+    ctaColor,
+    enableSocial,
+    websiteUrl,
+    instagramUrl,
+    whatsappUrl,
+    footerAddress,
+  ]);
+
   return (
     <div className="space-y-6 animate-in fade-in-50 duration-200">
       {/* 1. TOP HEADER & CONTROLS */}
@@ -79,6 +130,7 @@ export const TemplatesPage: React.FC = () => {
         onOpenTemplatePicker={() => setIsTemplatePickerOpen(true)}
         onNewTemplate={handleNewBlankTemplate}
         onSaveTemplate={handleSaveTemplate}
+        onOpenTestSend={() => setIsTestSendModalOpen(true)}
         isSaving={isSaving}
         hasSavedTemplate={Boolean(templateId)}
       />
@@ -184,6 +236,16 @@ export const TemplatesPage: React.FC = () => {
         targetField={activeTarget}
         onTargetFieldChange={setActiveTarget}
         showTargetSelector={channel === "email"}
+      />
+
+      {/* 5. TEST SEND EMAIL MODAL */}
+      <TestSendModal
+        open={isTestSendModalOpen}
+        onOpenChange={setIsTestSendModalOpen}
+        templateId={templateId}
+        subject={subject}
+        compiledHtml={compiledHtml}
+        activeRecipient={recipient}
       />
     </div>
   );

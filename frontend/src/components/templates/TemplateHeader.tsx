@@ -6,6 +6,7 @@ import {
   LayoutTemplate,
   Plus,
   Save,
+  Send,
   Loader2,
 } from "lucide-react";
 import type { TemplateChannel } from "@/types/template";
@@ -19,6 +20,7 @@ interface TemplateHeaderProps {
   onOpenTemplatePicker: () => void;
   onNewTemplate: () => void;
   onSaveTemplate: () => void;
+  onOpenTestSend?: () => void;
   isSaving?: boolean;
   hasSavedTemplate?: boolean;
 }
@@ -32,6 +34,7 @@ export const TemplateHeader: React.FC<TemplateHeaderProps> = ({
   onOpenTemplatePicker,
   onNewTemplate,
   onSaveTemplate,
+  onOpenTestSend,
   isSaving = false,
   hasSavedTemplate = false,
 }) => {
@@ -132,6 +135,19 @@ export const TemplateHeader: React.FC<TemplateHeaderProps> = ({
             <Code2 className="h-3.5 w-3.5 text-slate-500" />
             <span>Merge tags</span>
           </button>
+
+          {/* Send Test Email Button (Only on Email Channel) */}
+          {channel === "email" && onOpenTestSend && (
+            <button
+              type="button"
+              onClick={onOpenTestSend}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50/80 hover:bg-indigo-100 text-xs font-semibold text-indigo-700 shadow-2xs transition cursor-pointer active:scale-95 whitespace-nowrap"
+              title="Kirim email uji coba ke inbox Anda"
+            >
+              <Send className="h-3.5 w-3.5 text-indigo-600" />
+              <span>Kirim Uji Coba</span>
+            </button>
+          )}
 
           {/* Save Template Button */}
           <button

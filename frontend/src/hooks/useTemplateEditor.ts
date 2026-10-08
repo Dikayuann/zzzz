@@ -4,11 +4,11 @@ import { type DatabaseTemplateItem } from "@/components/templates";
 import type {
   TemplateChannel,
   RecipientPreview,
-  TemplateData,
 } from "@/types/template";
 import {
   SAMPLE_RECIPIENTS,
   DEFAULT_WA_CONTENT,
+  DEFAULT_TELEGRAM_CONTENT,
 } from "@/utils/templateParser";
 import { type PresetTemplate } from "@/data/presetTemplates";
 import { toast } from "sonner";
@@ -24,8 +24,28 @@ export function useTemplateEditor() {
   const [channel, setChannel] = useState<TemplateChannel>("email");
   const [subject, setSubject] = useState("");
   const [preheader, setPreheader] = useState("");
-  const [content, setContent] = useState("");
+  const [emailContent, setEmailContent] = useState("");
+  const [whatsappContent, setWhatsappContent] = useState(DEFAULT_WA_CONTENT);
+  const [telegramContent, setTelegramContent] = useState(DEFAULT_TELEGRAM_CONTENT);
   const [recipient, setRecipient] = useState<RecipientPreview>(SAMPLE_RECIPIENTS[0]);
+
+  // Active channel content accessor
+  const content =
+    channel === "whatsapp"
+      ? whatsappContent
+      : channel === "telegram"
+      ? telegramContent
+      : emailContent;
+
+  const setContent = (val: string | ((prev: string) => string)) => {
+    if (channel === "whatsapp") {
+      setWhatsappContent(val);
+    } else if (channel === "telegram") {
+      setTelegramContent(val);
+    } else {
+      setEmailContent(val);
+    }
+  };
 
   // Saved templates from DB
   const [savedTemplates, setSavedTemplates] = useState<DatabaseTemplateItem[]>([]);
@@ -79,12 +99,26 @@ export function useTemplateEditor() {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
-        const parsed: TemplateData & { templateId?: number } = JSON.parse(saved);
+        const parsed = JSON.parse(saved);
         if (parsed.title) setTitle(parsed.title);
         if (parsed.channel) setChannel(parsed.channel);
         if (parsed.subject !== undefined) setSubject(parsed.subject);
         if (parsed.preheader !== undefined) setPreheader(parsed.preheader);
-        if (parsed.content !== undefined) setContent(parsed.content);
+        if (parsed.emailContent !== undefined) {
+          setEmailContent(parsed.emailContent);
+        } else if (parsed.content !== undefined && parsed.channel === "email") {
+          setEmailContent(parsed.content);
+        }
+        if (parsed.whatsappContent !== undefined) {
+          setWhatsappContent(parsed.whatsappContent);
+        } else if (parsed.content !== undefined && parsed.channel === "whatsapp") {
+          setWhatsappContent(parsed.content);
+        }
+        if (parsed.telegramContent !== undefined) {
+          setTelegramContent(parsed.telegramContent);
+        } else if (parsed.content !== undefined && parsed.channel === "telegram") {
+          setTelegramContent(parsed.content);
+        }
         if (parsed.brandColor) setBrandColor(parsed.brandColor);
         if (parsed.enableLogo !== undefined) setEnableLogo(parsed.enableLogo);
         if (parsed.logoUrl !== undefined) setLogoUrl(parsed.logoUrl);
@@ -117,6 +151,9 @@ export function useTemplateEditor() {
           subject,
           preheader,
           content,
+          emailContent,
+          whatsappContent,
+          telegramContent,
           brandColor,
           enableLogo,
           logoUrl,
@@ -146,6 +183,9 @@ export function useTemplateEditor() {
     subject,
     preheader,
     content,
+    emailContent,
+    whatsappContent,
+    telegramContent,
     brandColor,
     enableLogo,
     logoUrl,
@@ -166,19 +206,21 @@ export function useTemplateEditor() {
   const handleChannelChange = (newChannel: TemplateChannel) => {
     if (newChannel === channel) return;
     setChannel(newChannel);
-
-    if (newChannel === "whatsapp" && !content.trim()) {
-      setContent(DEFAULT_WA_CONTENT);
-    }
   };
 
   // Handler: Select a Preset Template
   const handleSelectPreset = (preset: PresetTemplate) => {
     setTitle(preset.name);
     setChannel(preset.channel);
-    setSubject(preset.subject);
-    setPreheader(preset.preheader);
-    setContent(preset.content);
+    setSubject(preset.subject || "");
+    setPreheader(preset.preheader || "");
+    if (preset.channel === "whatsapp") {
+      setWhatsappContent(preset.content);
+    } else if (preset.channel === "telegram") {
+      setTelegramContent(preset.content);
+    } else {
+      setEmailContent(preset.content);
+    }
     setTemplateId(null);
     toast.success(`Template "${preset.name}" dimuat.`);
   };
@@ -187,18 +229,21 @@ export function useTemplateEditor() {
   const handleSelectSavedTemplate = (item: DatabaseTemplateItem) => {
     setTemplateId(item.id);
     setTitle(item.name);
-    setChannel((item.channelMode as TemplateChannel) || "email");
+    const targetChannel = (item.channelMode as TemplateChannel) || "email";
+    setChannel(targetChannel);
 
     const latestVersion = item.versions?.[0];
     if (latestVersion) {
       setSubject(latestVersion.subject || "");
       setPreheader(latestVersion.preheader || "");
-      if (item.channelMode === "whatsapp") {
-        setContent(latestVersion.contentWhatsapp || "");
-      } else if (item.channelMode === "telegram") {
-        setContent(latestVersion.contentTelegram || "");
-      } else {
-        setContent(latestVersion.contentHtml || "");
+      if (latestVersion.contentHtml) {
+        setEmailContent(latestVersion.contentHtml);
+      }
+      if (latestVersion.contentWhatsapp) {
+        setWhatsappContent(latestVersion.contentWhatsapp);
+      }
+      if (latestVersion.contentTelegram) {
+        setTelegramContent(latestVersion.contentTelegram);
       }
 
       if (latestVersion.contentJson) {
@@ -227,13 +272,19 @@ export function useTemplateEditor() {
   const handleNewBlankTemplate = () => {
     setTemplateId(null);
     setTitle("Template Kustom Baru");
-    setSubject("");
-    setPreheader("");
-    setContent("");
-    setEnableLogo(false);
-    setLogoUrl("");
-    setEnableCta(false);
-    setEnableSocial(false);
+    if (channel === "email") {
+      setSubject("");
+      setPreheader("");
+      setEmailContent("");
+      setEnableLogo(false);
+      setLogoUrl("");
+      setEnableCta(false);
+      setEnableSocial(false);
+    } else if (channel === "whatsapp") {
+      setWhatsappContent(DEFAULT_WA_CONTENT);
+    } else {
+      setTelegramContent(DEFAULT_TELEGRAM_CONTENT);
+    }
     toast.info("Kanvas bersih siap digunakan. Silakan mulai menulis atau pilih template.");
   };
 
@@ -246,12 +297,13 @@ export function useTemplateEditor() {
 
     setIsSaving(true);
     try {
+      // Simpan semua konten saluran yang terisi agar tidak saling menimpa
       const payloadContent = {
-        subject: channel === "email" ? subject : undefined,
-        preheader: channel === "email" ? preheader : undefined,
-        contentHtml: channel === "email" ? content : undefined,
-        contentWhatsapp: channel === "whatsapp" ? content : undefined,
-        contentTelegram: channel === "telegram" ? content : undefined,
+        subject: emailContent.trim() ? subject : undefined,
+        preheader: emailContent.trim() ? preheader : undefined,
+        contentHtml: emailContent.trim() || undefined,
+        contentWhatsapp: whatsappContent.trim() || undefined,
+        contentTelegram: telegramContent.trim() || undefined,
         contentJson: {
           brandColor,
           enableLogo,
@@ -270,10 +322,16 @@ export function useTemplateEditor() {
         },
       };
 
+      const hasEmail = Boolean(emailContent.trim());
+      const hasWa = Boolean(whatsappContent.trim() && whatsappContent !== DEFAULT_WA_CONTENT);
+      const hasTg = Boolean(telegramContent.trim() && telegramContent !== DEFAULT_TELEGRAM_CONTENT);
+      const filledChannelsCount = (hasEmail ? 1 : 0) + (hasWa ? 1 : 0) + (hasTg ? 1 : 0);
+      const channelMode = filledChannelsCount > 1 ? "multiple" : channel;
+
       if (templateId) {
         await api.put(`/templates/${templateId}`, {
           name: title,
-          channelMode: channel,
+          channelMode,
           category: "custom",
         });
 
@@ -283,7 +341,7 @@ export function useTemplateEditor() {
       } else {
         const createPayload = {
           name: title,
-          channelMode: channel,
+          channelMode,
           category: "custom",
           ...payloadContent,
         };
@@ -344,6 +402,12 @@ export function useTemplateEditor() {
     setPreheader,
     content,
     setContent,
+    emailContent,
+    setEmailContent,
+    whatsappContent,
+    setWhatsappContent,
+    telegramContent,
+    setTelegramContent,
     recipient,
     setRecipient,
     savedTemplates,

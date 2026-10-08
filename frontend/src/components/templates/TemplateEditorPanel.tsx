@@ -945,7 +945,7 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
   const canUndo = historyIndex > 0;
   const canRedo = historyIndex < history.length - 1;
 
-  const contentIsHtml = isRawHtml(content);
+  const contentIsHtml = channel === "email" && isRawHtml(content);
 
   return (
     <div className="space-y-4">

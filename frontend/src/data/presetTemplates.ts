@@ -247,4 +247,50 @@ Silakan balas pesan ini apabila memerlukan bantuan atau informasi tambahan.
 Hormat kami,
 *{{sender_name}}*`,
   },
+  {
+    id: "preset-wa-announcement",
+    name: "Pengumuman Layanan WhatsApp",
+    category: "announcement",
+    categoryLabel: "WhatsApp",
+    channel: "whatsapp",
+    description: "Format pengumuman resmi dan pembaruan sistem via WhatsApp.",
+    subject: "",
+    preheader: "",
+    isHtml: false,
+    content: `Halo kak *{{first_name}}*,
+
+Pemberitahuan pembaruan layanan dari *{{org_name}}*:
+• *Fitur Baru*: Pengiriman kampanye multi-saluran kini aktif
+• *Stabilitas*: Peningkatan performa antrean pesan
+• *Laporan*: Analitik pengiriman pesan secara real-time
+
+Jika ada pertanyaan atau kendala, silakan balas chat ini ya kak.
+
+Terima kasih,
+_Tim {{org_name}}_`,
+  },
+  {
+    id: "preset-tg-broadcast",
+    name: "Broadcast Channel Telegram",
+    category: "announcement",
+    categoryLabel: "Telegram",
+    channel: "telegram",
+    description: "Format pesan siaran resmi untuk channel atau grup Telegram.",
+    subject: "",
+    preheader: "",
+    isHtml: false,
+    content: `📢 *PENGUMUMAN RESMI {{org_name}}*
+
+Halo kak *{{first_name}}*, berikut rangkuman informasi terbaru:
+
+✅ *Pembaruan Sistem*: Peningkatan throughput pengiriman pesan
+✅ *Multi-Channel*: Terhubung ke Email, WhatsApp, dan Telegram
+✅ *Kode Promo*: \`{{kode_promo}}\` untuk diskon eksklusif
+
+Kunjungi tautan berikut untuk informasi lengkap:
+{{cta_link}}
+
+Salam hangat,
+*Tim {{org_name}}*`,
+  },
 ];
