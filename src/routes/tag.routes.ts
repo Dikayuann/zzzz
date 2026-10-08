@@ -6,6 +6,9 @@ import {
 } from "../controllers/tag.controller";
 import { authenticateJWT } from "../middlewares/auth.middleware";
 import { requirePermission } from "../middlewares/rbac.middleware";
+import { asyncHandler } from "../shared/middleware/asyncHandler";
+import { validate } from "../shared/middleware/validate";
+import { createTagSchema } from "../schemas/tag.schema";
 
 const router = Router();
 
@@ -24,7 +27,7 @@ router.use(authenticateJWT);
  *       200:
  *         description: Berhasil mengambil daftar tag
  */
-router.get("/", requirePermission("contacts", "view"), getTagsController);
+router.get("/", requirePermission("contacts", "view"), asyncHandler(getTagsController));
 
 /**
  * @openapi
@@ -49,7 +52,12 @@ router.get("/", requirePermission("contacts", "view"), getTagsController);
  *       409:
  *         description: Nama tag sudah digunakan
  */
-router.post("/", requirePermission("contacts", "create"), createTagController);
+router.post(
+    "/",
+    requirePermission("contacts", "create"),
+    validate({ body: createTagSchema }),
+    asyncHandler(createTagController)
+);
 
 /**
  * @openapi
@@ -70,6 +78,6 @@ router.post("/", requirePermission("contacts", "create"), createTagController);
  *       404:
  *         description: Tag tidak ditemukan
  */
-router.delete("/:id", requirePermission("contacts", "delete"), deleteTagController);
+router.delete("/:id", requirePermission("contacts", "delete"), asyncHandler(deleteTagController));
 
 export default router;

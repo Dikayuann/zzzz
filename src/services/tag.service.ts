@@ -1,5 +1,6 @@
 import prisma from "../lib/prisma";
 import { logAudit } from "../lib/audit";
+import { AppError } from "../shared/errors/AppError";
 import { CreateTagInput } from "../schemas/tag.schema";
 
 // ambil semua tag milik tenant beserta jumlah kontaknya
@@ -24,11 +25,11 @@ export const getTags = async (tenantId: number) => {
 };
 
 // buat tag baru
-export const createTag = async (tenantId: number, actorId: number, data: CreateTagInput ) => {
-    const existing = await prisma.tag.findFirst({ where: {tenantId, name: data.name } });
+export const createTag = async (tenantId: number, actorId: number, data: CreateTagInput) => {
+    const existing = await prisma.tag.findFirst({ where: { tenantId, name: data.name } });
 
     if (existing) {
-        throw new Error("TAG_DUPLICATE");
+        throw new AppError("Nama tag sudah digunakan", 409);
     }
 
     const tag = await prisma.tag.create({
@@ -48,14 +49,14 @@ export const createTag = async (tenantId: number, actorId: number, data: CreateT
     });
 
     return tag;
-}
+};
 
 // hapus tag
-export const deleteTag = async (tenantId: number, actorId: number, tagId: number ) => {
-    const existing = await prisma.tag.findFirst({ where: {id: tagId, tenantId }});
+export const deleteTag = async (tenantId: number, actorId: number, tagId: number) => {
+    const existing = await prisma.tag.findFirst({ where: { id: tagId, tenantId } });
 
     if (!existing) {
-        throw new Error("TAG_NOT_FOUND");
+        throw new AppError("Tag tidak ditemukan", 404);
     }
 
     // Cascade delete akan otomatis menghapus relasi di contact_tags
@@ -73,4 +74,4 @@ export const deleteTag = async (tenantId: number, actorId: number, tagId: number
     });
 
     return { success: true };
-}
+};
