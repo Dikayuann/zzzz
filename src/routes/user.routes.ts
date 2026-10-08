@@ -7,6 +7,13 @@ import {
 } from "../controllers/user.controller";
 import { authenticateJWT } from "../middlewares/auth.middleware";
 import { requirePermission } from "../middlewares/rbac.middleware";
+import { asyncHandler } from "../shared/middleware/asyncHandler";
+import { validate } from "../shared/middleware/validate";
+import {
+    userQuerySchema,
+    inviteUserSchema,
+    updateUserRoleSchema,
+} from "../schemas/user.schema";
 
 const router = Router();
 
@@ -35,7 +42,12 @@ router.use(authenticateJWT);
  *       200:
  *         description: Berhasil mengambil data user
  */
-router.get("/", requirePermission("users", "view"), listUsersController);
+router.get(
+    "/",
+    requirePermission("users", "view"),
+    validate({ query: userQuerySchema }),
+    asyncHandler(listUsersController)
+);
 
 /**
  * @openapi
@@ -60,7 +72,12 @@ router.get("/", requirePermission("users", "view"), listUsersController);
  *       201:
  *         description: Undangan berhasil dibuat
  */
-router.post("/invite", requirePermission("users", "create"), inviteUserController);
+router.post(
+    "/invite",
+    requirePermission("users", "create"),
+    validate({ body: inviteUserSchema }),
+    asyncHandler(inviteUserController)
+);
 
 /**
  * @openapi
@@ -88,7 +105,12 @@ router.post("/invite", requirePermission("users", "create"), inviteUserControlle
  *       200:
  *         description: Role berhasil diubah
  */
-router.patch("/:id/role", requirePermission("users", "edit"), changeUserRoleController);
+router.patch(
+    "/:id/role",
+    requirePermission("users", "edit"),
+    validate({ body: updateUserRoleSchema }),
+    asyncHandler(changeUserRoleController)
+);
 
 /**
  * @openapi
@@ -107,6 +129,6 @@ router.patch("/:id/role", requirePermission("users", "edit"), changeUserRoleCont
  *       200:
  *         description: User berhasil dinonaktifkan
  */
-router.delete("/:id", requirePermission("users", "delete"), deactivateUserController);
+router.delete("/:id", requirePermission("users", "delete"), asyncHandler(deactivateUserController));
 
 export default router;

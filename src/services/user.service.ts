@@ -1,11 +1,11 @@
-import cyrpto from "node:crypto"
+import crypto from "node:crypto";
 import bcrypt from "bcrypt";
 import prisma from "../lib/prisma";
-import {logAudit} from "../lib/audit";
-import {InviteUserInput, UpdateUserRoleInput} from "../schemas/user.schema";
+import { logAudit } from "../lib/audit";
+import { AppError } from "../shared/errors/AppError";
+import { InviteUserInput, UpdateUserRoleInput } from "../schemas/user.schema";
 
-
-const BCYRPT_ROUNDS = 12;
+const BCRYPT_ROUNDS = 12;
 
 // list user dalam tenant
 export const listUser = async (
@@ -16,19 +16,19 @@ export const listUser = async (
 ) => {
     const skip = (page - 1) * limit;
 
-    const whereCondition: any = {tenantId};
+    const whereCondition: any = { tenantId };
 
     if (search) {
         whereCondition.OR = [
-            {name: {contains: search}},
-            {email: {contains: search}},
+            { name: { contains: search } },
+            { email: { contains: search } },
         ];
     }
 
     const [total, users] = await Promise.all([
-        prisma.user.count({where: whereCondition}), // total
+        prisma.user.count({ where: whereCondition }), // total
         prisma.user.findMany({
-            where: whereCondition,  // users array
+            where: whereCondition, // users array
             skip,
             take: limit,
             select: {
@@ -50,7 +50,7 @@ export const listUser = async (
                     },
                 },
             },
-            orderBy: {id: "desc"},
+            orderBy: { id: "desc" },
         }),
     ]);
 
@@ -80,33 +80,33 @@ export const inviteUser = async (
 ) => {
     // mengecek email apakah sudah terdaftar
     const existingUser = await prisma.user.findUnique({
-        where: {email: data.email},
+        where: { email: data.email },
     });
 
     if (existingUser) {
-        throw new Error("EMAIL_ALREADY_EXISTS");
+        throw new AppError("Email sudah terdaftar di sistem", 409);
     }
 
     // mengecek apakah role yang dipilih valid
     const role = await prisma.role.findFirst({
         where: {
             id: data.roleId,
-            OR: [{tenantId: null}, {tenantId: tenantId}]
-        }
+            OR: [{ tenantId: null }, { tenantId: tenantId }],
+        },
     });
 
     if (!role) {
-        throw new Error("ROLE_NOT_FOUND");
+        throw new AppError("Role yang dipilih tidak ditemukan", 404);
     }
+
     // membuat password sementara untuk user yang diundang
-    const randomPassword = cyrpto.randomBytes(8).toString("hex") + "Aa1!";
-    const passwordHash = await bcrypt.hash(randomPassword, BCYRPT_ROUNDS);
+    const randomPassword = crypto.randomBytes(8).toString("hex") + "Aa1!";
+    const passwordHash = await bcrypt.hash(randomPassword, BCRYPT_ROUNDS);
 
     // membuat token undangan/verifikasi
-    const rawInviteToken =
-        cyrpto.randomBytes(32).toString("hex");
-    const tokenHash = cyrpto.createHash("sha256").update(rawInviteToken).digest("hex");
-    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); //48 jam
+    const rawInviteToken = crypto.randomBytes(32).toString("hex");
+    const tokenHash = crypto.createHash("sha256").update(rawInviteToken).digest("hex");
+    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 jam
 
     const newUser = await prisma.$transaction(async (tx) => {
         const user = await tx.user.create({
@@ -117,7 +117,7 @@ export const inviteUser = async (
                 passwordHash,
                 status: "INVITED",
                 userRoles: {
-                    create: {roleId: role.id},
+                    create: { roleId: role.id },
                 },
             },
             select: {
@@ -139,20 +139,20 @@ export const inviteUser = async (
         return user;
     });
 
-    // catata audit log
+    // catat audit log
     await logAudit({
         tenantId,
         actorId: actorUserId,
         action: "INVITE_USER",
         entityType: "User",
         entityId: newUser.id,
-        details: {email: newUser.email, role: role.name}
+        details: { email: newUser.email, role: role.name },
     });
 
     return {
         user: newUser,
         role: role.name,
-        inviteToken: rawInviteToken // dikirimkan via STMP Email
+        inviteToken: rawInviteToken, // dikirimkan via SMTP Email
     };
 };
 
@@ -160,37 +160,38 @@ export const changeUserRole = async (
     tenantId: number,
     actorUserId: number,
     targetUserId: number,
-    data: UpdateUserRoleInput) => {
+    data: UpdateUserRoleInput
+) => {
     // memastikan target user ada di dalam tenant yang sama
     const user = await prisma.user.findFirst({
-        where: {id: targetUserId, tenantId}
+        where: { id: targetUserId, tenantId },
     });
 
     if (!user) {
-        throw new Error("USER_NOT_FOUND");
+        throw new AppError("Pengguna tidak ditemukan", 404);
     }
 
     // tidak boleh mengubah role diri sendiri untuk mencegah kehilangan akses admin
     if (user.id === actorUserId) {
-        throw new Error("CANNOT_CHANGE_OWN_ROLE");
+        throw new AppError("Tidak dapat mengubah role diri sendiri", 400);
     }
 
     // memastikan role tujuan valid
     const role = await prisma.role.findFirst({
         where: {
             id: data.roleId,
-            OR: [{tenantId: null}, {tenantId: tenantId}]
+            OR: [{ tenantId: null }, { tenantId: tenantId }],
         },
     });
 
     if (!role) {
-        throw new Error("ROLE_NOT_FOUND");
+        throw new AppError("Role tujuan tidak ditemukan", 404);
     }
 
     await prisma.$transaction(async (tx) => {
         // hapus role lama
         await tx.userRole.deleteMany({
-            where: {userId: targetUserId},
+            where: { userId: targetUserId },
         });
 
         // pasang role baru
@@ -209,10 +210,10 @@ export const changeUserRole = async (
         action: "CHANGE_USER_ROLE",
         entityType: "User",
         entityId: targetUserId,
-        details: {role: role.name, roleId: role.id},
+        details: { role: role.name, roleId: role.id },
     });
 
-    return {success: true, newRole: role.name}
+    return { success: true, newRole: role.name };
 };
 
 // nonaktifkan user (deactivate)
@@ -222,28 +223,28 @@ export const deactivateUser = async (
     targetUserId: number
 ) => {
     const user = await prisma.user.findFirst({
-        where: {id: targetUserId, tenantId}
+        where: { id: targetUserId, tenantId },
     });
 
     if (!user) {
-        throw new Error("USER_NOT_FOUND");
+        throw new AppError("Anggota tim tidak ditemukan", 404);
     }
 
     if (user.id === actorUserId) {
-        throw new Error("CANNOT_DEACTIVATE_SELF");
+        throw new AppError("Tidak dapat menonaktifkan diri sendiri", 400);
     }
 
     await prisma.$transaction(async (tx) => {
         // update user menjadi inactive
         await tx.user.update({
-            where: {id: targetUserId},
-            data: {status: "INACTIVE"}
+            where: { id: targetUserId },
+            data: { status: "INACTIVE" },
         });
 
         // revoke refresh token aktif agar session langsung mati
         await tx.refreshToken.updateMany({
-            where: {userId: targetUserId, revokedAt: null},
-            data: {revokedAt: new Date()},
+            where: { userId: targetUserId, revokedAt: null },
+            data: { revokedAt: new Date() },
         });
     });
 
@@ -255,6 +256,6 @@ export const deactivateUser = async (
         entityType: "User",
         entityId: targetUserId,
     });
-    return {success: true}
-}
 
+    return { success: true };
+};
