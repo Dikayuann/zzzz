@@ -15,15 +15,10 @@ import {
   DEFAULT_GRAY_IMAGE_PLACEHOLDER,
 } from "@/utils/htmlHighlighter";
 import {
-  MousePointerClick,
-  Share2,
   Code2,
   FileText,
   Image as ImageIcon,
   Upload,
-  AlignLeft,
-  AlignCenter,
-  AlignRight,
   Type,
   Layout,
   SlidersHorizontal,
@@ -36,6 +31,12 @@ import {
   ArrowUpDown,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  LogoBlockEditor,
+  CtaBlockEditor,
+  SocialBlockEditor,
+  SubjectPreheaderInputs,
+} from "./blocks";
 
 interface TemplateEditorPanelProps {
   channel: TemplateChannel;
@@ -89,13 +90,7 @@ const QUICK_MERGE_TAGS = [
   "{{unsubscribe_link}}",
 ];
 
-const CTA_COLORS = [
-  { name: "Indigo", hex: "#4F46E5" },
-  { name: "Emerald", hex: "#059669" },
-  { name: "Rose", hex: "#E11D48" },
-  { name: "Amber", hex: "#D97706" },
-  { name: "Slate", hex: "#0F172A" },
-];
+
 
 export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
   channel,
@@ -141,7 +136,6 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
   const subjectInputRef = useRef<HTMLInputElement>(null);
   const preheaderInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const visualIframeRef = useRef<HTMLIFrameElement>(null);
   const visualParentScrollRef = useRef<HTMLDivElement>(null);
   const isIframeEditingRef = useRef(false);
@@ -167,21 +161,6 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
     lastFocusedFieldRef.current = target;
   };
 
-  const updateSubjectSelection = () => {
-    if (subjectInputRef.current) {
-      const start = subjectInputRef.current.selectionStart ?? subject.length;
-      const end = subjectInputRef.current.selectionEnd ?? subject.length;
-      subjectSelectionRef.current = { start, end };
-    }
-  };
-
-  const updatePreheaderSelection = () => {
-    if (preheaderInputRef.current) {
-      const start = preheaderInputRef.current.selectionStart ?? preheader.length;
-      const end = preheaderInputRef.current.selectionEnd ?? preheader.length;
-      preheaderSelectionRef.current = { start, end };
-    }
-  };
 
   // Editor mode: Visual (Format Teks) vs Raw HTML Code
   const [editorMode, setEditorMode] = useState<"visual" | "html">(
@@ -241,8 +220,7 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
   const isUndoRedoAction = useRef(false);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Optional Preheader accordion toggle
-  const [showPreheaderInput, setShowPreheaderInput] = useState(Boolean(preheader));
+
 
   // Extract all text strings whenever content has HTML
   const extractedTextBlocks: ExtractedTextBlock[] = useMemo(() => {
@@ -940,26 +918,7 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
     };
   }, [content, editorMode, visualSubView]);
 
-  // Handle Logo file upload from user's computer
-  const handleLogoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
 
-    if (!file.type.startsWith("image/")) {
-      alert("Harap pilih file gambar (PNG, JPG, SVG)");
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (uploadEvent) => {
-      const dataUrl = uploadEvent.target?.result as string;
-      if (dataUrl) {
-        onLogoUrlChange?.(dataUrl);
-        onEnableLogoChange?.(true);
-      }
-    };
-    reader.readAsDataURL(file);
-  };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.ctrlKey || e.metaKey) {
@@ -991,158 +950,22 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
   return (
     <div className="space-y-4">
       {/* 1. EMAIL SUBJECT & PREHEADER INPUTS */}
-      {channel === "email" && (
-        <div className="space-y-2.5">
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
-                <span>Subjek Email</span>
-                {currentActiveTarget === "subject" && (
-                  <span className="text-[10px] text-slate-600 bg-slate-100 font-medium px-1.5 py-0.5 rounded border border-slate-200">
-                    Target aktif
-                  </span>
-                )}
-              </label>
-              <button
-                type="button"
-                onClick={() => setShowPreheaderInput(!showPreheaderInput)}
-                className="text-[11px] text-slate-600 hover:text-slate-900 font-medium transition cursor-pointer"
-              >
-                {showPreheaderInput ? "Sembunyikan Preheader" : "Tambah Preheader"}
-              </button>
-            </div>
-            <input
-              ref={subjectInputRef}
-              type="text"
-              value={subject}
-              onFocus={() => {
-                setActiveTarget("subject");
-                updateSubjectSelection();
-              }}
-              onClick={() => {
-                setActiveTarget("subject");
-                updateSubjectSelection();
-              }}
-              onSelect={() => {
-                setActiveTarget("subject");
-                updateSubjectSelection();
-              }}
-              onKeyUp={() => {
-                setActiveTarget("subject");
-                updateSubjectSelection();
-              }}
-              onChange={(e) => {
-                onSubjectChange(e.target.value);
-                const pos = e.target.selectionStart ?? e.target.value.length;
-                subjectSelectionRef.current = { start: pos, end: pos };
-              }}
-              placeholder="Contoh: Spesial untuk {{first_name}}: Penawaran terbatas hari ini"
-              className={`w-full h-10 px-3.5 rounded-xl border bg-white text-xs text-slate-900 focus:outline-none shadow-2xs transition ${
-                currentActiveTarget === "subject"
-                  ? "border-slate-800 ring-1 ring-slate-800"
-                  : "border-slate-200/90"
-              }`}
-            />
-
-            {/* Quick Merge Tags for Subject Line */}
-            <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
-              <span className="text-[10px] font-semibold text-slate-400">
-                Sisipkan ke Subjek:
-              </span>
-              {["{{first_name}}", "{{nama}}", "{{kode_promo}}", "{{diskon}}", "{{org_name}}"].map((tag) => (
-                <button
-                  key={tag}
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => handleInsertSubjectTag(tag)}
-                  className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 font-mono text-[11px] font-medium transition cursor-pointer active:scale-95"
-                  title={`Sisipkan ${tag} langsung ke Subjek Email`}
-                >
-                  {tag}
-                </button>
-              ))}
-              <button
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  setActiveTarget("subject");
-                  onOpenMergeTagsModal();
-                }}
-                className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-semibold transition cursor-pointer"
-                title="Buka pustaka merge tag lengkap untuk subjek"
-              >
-                Tag Lain...
-              </button>
-            </div>
-          </div>
-
-          {showPreheaderInput && onPreheaderChange && (
-            <div className="space-y-1.5 animate-in fade-in-50 duration-150">
-              <div className="flex items-center justify-between">
-                <label className="text-[11px] font-medium text-slate-500 flex items-center gap-1.5">
-                  <span>Preheader (Teks cuplikan inbox sebelum email dibuka)</span>
-                  {currentActiveTarget === "preheader" && (
-                    <span className="text-[10px] text-slate-600 bg-slate-100 font-medium px-1.5 py-0.5 rounded border border-slate-200">
-                      Target aktif
-                    </span>
-                  )}
-                </label>
-              </div>
-              <input
-                ref={preheaderInputRef}
-                type="text"
-                value={preheader}
-                onFocus={() => {
-                  setActiveTarget("preheader");
-                  updatePreheaderSelection();
-                }}
-                onClick={() => {
-                  setActiveTarget("preheader");
-                  updatePreheaderSelection();
-                }}
-                onSelect={() => {
-                  setActiveTarget("preheader");
-                  updatePreheaderSelection();
-                }}
-                onKeyUp={() => {
-                  setActiveTarget("preheader");
-                  updatePreheaderSelection();
-                }}
-                onChange={(e) => {
-                  onPreheaderChange(e.target.value);
-                  const pos = e.target.selectionStart ?? e.target.value.length;
-                  preheaderSelectionRef.current = { start: pos, end: pos };
-                }}
-                placeholder="Contoh: Gunakan kode promo {{kode_promo}} sebelum {{tanggal_kadaluarsa}}..."
-                className={`w-full h-8 px-3 rounded-lg border bg-slate-50/50 text-xs text-slate-800 focus:outline-none transition ${
-                  currentActiveTarget === "preheader"
-                    ? "border-slate-800 ring-1 ring-slate-800 bg-white"
-                    : "border-slate-200"
-                }`}
-              />
-
-              {/* Quick Merge Tags for Preheader */}
-              <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
-                <span className="text-[10px] font-semibold text-slate-400">
-                  Sisipkan ke Preheader:
-                </span>
-                {["{{first_name}}", "{{kode_promo}}", "{{tanggal_kadaluarsa}}"].map((tag) => (
-                  <button
-                    key={tag}
-                    type="button"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => handleInsertPreheaderTag(tag)}
-                    className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 font-mono text-[11px] font-medium transition cursor-pointer active:scale-95"
-                    title={`Sisipkan ${tag} langsung ke Preheader`}
-                  >
-                    {tag}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+      <SubjectPreheaderInputs
+        channel={channel}
+        subject={subject}
+        onSubjectChange={onSubjectChange}
+        preheader={preheader}
+        onPreheaderChange={onPreheaderChange}
+        currentActiveTarget={currentActiveTarget}
+        setActiveTarget={setActiveTarget}
+        subjectInputRef={subjectInputRef}
+        preheaderInputRef={preheaderInputRef}
+        subjectSelectionRef={subjectSelectionRef}
+        preheaderSelectionRef={preheaderSelectionRef}
+        onOpenMergeTagsModal={onOpenMergeTagsModal}
+        handleInsertSubjectTag={handleInsertSubjectTag}
+        handleInsertPreheaderTag={handleInsertPreheaderTag}
+      />
 
       {/* 2. RICH EDITOR CONTAINER WITH DUAL MODE */}
       <div className="rounded-2xl border border-slate-200/90 bg-white shadow-2xs overflow-hidden flex flex-col focus-within:border-slate-400 transition">
@@ -1859,319 +1682,41 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
 
       {/* 3. MODUL LOGO PERUSAHAAN (CUSTOM LOGO) */}
       {channel === "email" && (
-        <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-2xs space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="h-7 w-7 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center">
-                <ImageIcon className="h-3.5 w-3.5" />
-              </div>
-              <div>
-                <h4 className="text-xs font-bold text-slate-900">
-                  Logo Organisasi & Brand (Custom Logo)
-                </h4>
-                <p className="text-[11px] text-slate-400">
-                  Tampilkan logo resmi brand Anda di bagian atas template email
-                </p>
-              </div>
-            </div>
-
-            {/* Toggle switch */}
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={enableLogo}
-                onChange={(e) => onEnableLogoChange?.(e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-slate-900"></div>
-            </label>
-          </div>
-
-          {enableLogo && (
-            <div className="space-y-3 pt-2 border-t border-slate-100 animate-in fade-in-50 duration-150">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
-                <div className="sm:col-span-2 space-y-1">
-                  <label className="text-[11px] font-medium text-slate-600">
-                    URL Gambar Logo
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={logoUrl}
-                      onChange={(e) => onLogoUrlChange?.(e.target.value)}
-                      placeholder="https://acmecorp.co/logo.png"
-                      className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-slate-800"
-                    />
-
-                    {/* Hidden file input */}
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handleLogoFileUpload}
-                      className="hidden"
-                    />
-
-                    {/* Upload from PC Button */}
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="h-8 px-3 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 whitespace-nowrap transition cursor-pointer flex items-center gap-1 shrink-0"
-                      title="Unggah logo dari komputer Anda"
-                    >
-                      <Upload className="h-3 w-3" />
-                      <span>Unggah</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Logo Preview Thumbnail */}
-                <div className="space-y-1">
-                  <span className="text-[11px] font-medium text-slate-500 block">
-                    Pratinjau Logo
-                  </span>
-                  <div className="h-10 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-center p-1 overflow-hidden">
-                    {logoUrl ? (
-                      <img
-                        src={logoUrl}
-                        alt="Logo Preview"
-                        className="max-h-8 max-w-full object-contain"
-                      />
-                    ) : (
-                      <span className="text-[10px] text-slate-400 italic">
-                        Belum ada logo
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Logo Width & Alignment Controls */}
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-1 text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-medium text-slate-600">
-                    Lebar Logo:
-                  </span>
-                  <div className="flex items-center gap-1">
-                    {[100, 140, 180].map((width) => (
-                      <button
-                        key={width}
-                        type="button"
-                        onClick={() => onLogoWidthChange?.(width)}
-                        className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition cursor-pointer ${
-                          logoWidth === width
-                            ? "bg-slate-900 text-white"
-                            : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                        }`}
-                      >
-                        {width}px
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-medium text-slate-600">
-                    Posisi:
-                  </span>
-                  <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
-                    <button
-                      type="button"
-                      onClick={() => onLogoAlignChange?.("left")}
-                      className={`p-1 rounded transition cursor-pointer ${
-                        logoAlign === "left"
-                          ? "bg-white text-slate-900 shadow-2xs"
-                          : "text-slate-500 hover:text-slate-800"
-                      }`}
-                      title="Rata Kiri"
-                    >
-                      <AlignLeft className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onLogoAlignChange?.("center")}
-                      className={`p-1 rounded transition cursor-pointer ${
-                        logoAlign === "center"
-                          ? "bg-white text-slate-900 shadow-2xs"
-                          : "text-slate-500 hover:text-slate-800"
-                      }`}
-                      title="Rata Tengah"
-                    >
-                      <AlignCenter className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onLogoAlignChange?.("right")}
-                      className={`p-1 rounded transition cursor-pointer ${
-                        logoAlign === "right"
-                          ? "bg-white text-slate-900 shadow-2xs"
-                          : "text-slate-500 hover:text-slate-800"
-                      }`}
-                      title="Rata Kanan"
-                    >
-                      <AlignRight className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+        <LogoBlockEditor
+          enableLogo={enableLogo}
+          onEnableLogoChange={onEnableLogoChange}
+          logoUrl={logoUrl}
+          onLogoUrlChange={onLogoUrlChange}
+          logoWidth={logoWidth}
+          onLogoWidthChange={onLogoWidthChange}
+          logoAlign={logoAlign}
+          onLogoAlignChange={onLogoAlignChange}
+        />
       )}
 
       {/* 4. MODUL CTA BUTTON & SOCIAL */}
       {channel === "email" && (
         <div className="space-y-3 pt-1">
-          {/* CTA BUTTON BLOCK */}
-          <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-2xs space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="h-7 w-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                  <MousePointerClick className="h-3.5 w-3.5" />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-slate-900">
-                    Tombol CTA Otomatis (Call to Action)
-                  </h4>
-                  <p className="text-[11px] text-slate-400">
-                    Sematkan tombol aksi utama tanpa perlu menulis kode HTML
-                  </p>
-                </div>
-              </div>
-
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={enableCta}
-                  onChange={(e) => onEnableCtaChange?.(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
-              </label>
-            </div>
-
-            {enableCta && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100 animate-in fade-in-50 duration-150">
-                <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-slate-600">
-                    Teks Tombol
-                  </label>
-                  <input
-                    type="text"
-                    value={ctaText}
-                    onChange={(e) => onCtaTextChange?.(e.target.value)}
-                    placeholder="Contoh: Belanja Sekarang"
-                    className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-slate-600">
-                    Tautan Tujuan (URL)
-                  </label>
-                  <input
-                    type="text"
-                    value={ctaUrl}
-                    onChange={(e) => onCtaUrlChange?.(e.target.value)}
-                    placeholder="https://tokoonline.com/promo"
-                    className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-
-                <div className="sm:col-span-2 flex items-center gap-2 pt-1">
-                  <span className="text-[11px] font-medium text-slate-500">
-                    Warna Tombol:
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    {CTA_COLORS.map((col) => (
-                      <button
-                        key={col.hex}
-                        type="button"
-                        onClick={() => onCtaColorChange?.(col.hex)}
-                        style={{ backgroundColor: col.hex }}
-                        className={`w-5 h-5 rounded-full transition cursor-pointer ${
-                          ctaColor === col.hex
-                            ? "ring-2 ring-offset-2 ring-indigo-500 scale-110"
-                            : "opacity-80 hover:opacity-100"
-                        }`}
-                        title={col.name}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* SOCIAL & FOOTER BLOCK */}
-          <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-2xs space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="h-7 w-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                  <Share2 className="h-3.5 w-3.5" />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-slate-900">
-                    Tautan Sosial Media & Footer Kepatuhan
-                  </h4>
-                  <p className="text-[11px] text-slate-400">
-                    Tampilkan tautan website, media sosial, dan alamat pengirim di bagian bawah email
-                  </p>
-                </div>
-              </div>
-
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={enableSocial}
-                  onChange={(e) => onEnableSocialChange?.(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
-              </label>
-            </div>
-
-            {enableSocial && (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2 border-t border-slate-100 animate-in fade-in-50 duration-150 text-xs">
-                <div>
-                  <label className="text-[10px] font-medium text-slate-500 block mb-0.5">
-                    Website
-                  </label>
-                  <input
-                    type="text"
-                    value={websiteUrl}
-                    onChange={(e) => onWebsiteUrlChange?.(e.target.value)}
-                    placeholder="https://acmecorp.co"
-                    className="w-full h-7 px-2 rounded-lg border border-slate-200 text-xs text-slate-800"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-medium text-slate-500 block mb-0.5">
-                    Instagram
-                  </label>
-                  <input
-                    type="text"
-                    value={instagramUrl}
-                    onChange={(e) => onInstagramUrlChange?.(e.target.value)}
-                    placeholder="https://instagram.com/acme"
-                    className="w-full h-7 px-2 rounded-lg border border-slate-200 text-xs text-slate-800"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-medium text-slate-500 block mb-0.5">
-                    WhatsApp CS
-                  </label>
-                  <input
-                    type="text"
-                    value={whatsappUrl}
-                    onChange={(e) => onWhatsappUrlChange?.(e.target.value)}
-                    placeholder="https://wa.me/62812..."
-                    className="w-full h-7 px-2 rounded-lg border border-slate-200 text-xs text-slate-800"
-                  />
-                </div>
-              </div>
-            )}
-          </div>
+          <CtaBlockEditor
+            enableCta={enableCta}
+            onEnableCtaChange={onEnableCtaChange}
+            ctaText={ctaText}
+            onCtaTextChange={onCtaTextChange}
+            ctaUrl={ctaUrl}
+            onCtaUrlChange={onCtaUrlChange}
+            ctaColor={ctaColor}
+            onCtaColorChange={onCtaColorChange}
+          />
+          <SocialBlockEditor
+            enableSocial={enableSocial}
+            onEnableSocialChange={onEnableSocialChange}
+            websiteUrl={websiteUrl}
+            onWebsiteUrlChange={onWebsiteUrlChange}
+            instagramUrl={instagramUrl}
+            onInstagramUrlChange={onInstagramUrlChange}
+            whatsappUrl={whatsappUrl}
+            onWhatsappUrlChange={onWhatsappUrlChange}
+          />
         </div>
       )}
     </div>
