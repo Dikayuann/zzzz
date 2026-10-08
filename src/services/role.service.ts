@@ -1,15 +1,16 @@
 import prisma from "../lib/prisma";
-import {CreateRoleInput} from "../schemas/role.schema";
-import {logAudit} from "../lib/audit";
+import { CreateRoleInput } from "../schemas/role.schema";
+import { logAudit } from "../lib/audit";
+import { AppError } from "../shared/errors/AppError";
 
-export const getRoles = async(tenantId: number) => {
+export const getRoles = async (tenantId: number) => {
     return await prisma.role.findMany({
         where: {
             OR: [
                 { tenantId: null },
                 // Role default sistem (Org Admin, Manager, dll)
-                { tenantId: tenantId }
-                //role kustom
+                { tenantId: tenantId },
+                // role kustom
             ],
         },
         select: {
@@ -23,13 +24,13 @@ export const getRoles = async(tenantId: number) => {
                         select: {
                             id: true,
                             module: true,
-                            action: true
+                            action: true,
                         },
                     },
                 },
             },
         },
-        orderBy: { id: "asc"}
+        orderBy: { id: "asc" },
     });
 };
 
@@ -39,61 +40,66 @@ export const getPermissions = async () => {
         select: {
             id: true,
             module: true,
-            action: true
+            action: true,
         },
         orderBy: [
             { module: "asc" },
-            { action: "asc" }
+            { action: "asc" },
         ],
     });
 };
 
-export const createCustomRole = async ( tenantId: number, actorUserId: number, data: CreateRoleInput) => {
-
-    //Cek apakah nama role sudah dipakai di tenant ini atau bentrok dengan role bawaan
+export const createCustomRole = async (
+    tenantId: number,
+    actorUserId: number,
+    data: CreateRoleInput
+) => {
+    // Cek apakah nama role sudah dipakai di tenant ini atau bentrok dengan role bawaan
     const existingRole = await prisma.role.findFirst({
         where: {
             name: data.name,
-            OR: [
-                { tenantId }, { tenantId: null }
-            ],
+            OR: [{ tenantId }, { tenantId: null }],
         },
     });
 
     if (existingRole) {
-        throw new Error("ROLE_NAME_DUPLICATE");
+        throw new AppError("Nama role sudah digunakan di organisasi ini", 409);
     }
 
-    //Validasi apakah semua permissionIds yang dikirim benar-benar ada di tabel permissions
+    // Validasi apakah semua permissionIds yang dikirim benar-benar ada di tabel permissions
     const validPermissions = await prisma.permission.findMany({
         where: {
-            id: { in: data.permissionIds }
-        }
+            id: { in: data.permissionIds },
+        },
     });
+
     if (validPermissions.length !== data.permissionIds.length) {
-        throw new Error("INVALID_PERMISSION_IDS");
+        throw new AppError("Satu atau lebih ID permission yang dipilih tidak valid", 400);
     }
-    //buat Role dan hubungkan ke Permission secara atomik
+
+    // Buat Role dan hubungkan ke Permission secara atomik
     const newRole = await prisma.$transaction(async (tx) => {
         // membuat record role
         const role = await tx.role.create({
             data: {
                 name: data.name,
                 tenantId: tenantId,
-                isCustom: true
+                isCustom: true,
             },
         });
 
         const rolePermissionsData = data.permissionIds.map((permissionId) => ({
             roleId: role.id,
-            permissionId: permissionId
+            permissionId: permissionId,
         }));
+
         await tx.rolePermission.createMany({
-            data:
-                rolePermissionsData,
-            });
+            data: rolePermissionsData,
+        });
+
         return role;
     });
+
     // mencatat audit log
     await logAudit({
         tenantId,
@@ -114,7 +120,7 @@ export const createCustomRole = async ( tenantId: number, actorUserId: number, d
         include: {
             rolePermissions: {
                 include: {
-                    permission: true
+                    permission: true,
                 },
             },
         },

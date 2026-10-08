@@ -1,21 +1,32 @@
 import { Router } from "express";
-import prisma from "../lib/prisma";
 import { authenticateJWT } from "../middlewares/auth.middleware";
 import { requirePermission } from "../middlewares/rbac.middleware";
-import { listRolesController,
+import { asyncHandler } from "../shared/middleware/asyncHandler";
+import { validate } from "../shared/middleware/validate";
+import { createRoleSchema } from "../schemas/role.schema";
+import {
+    listRolesController,
     listPermissionsController,
-    createRoleController
+    createRoleController,
 } from "../controllers/role.controller";
 
 const router = Router();
 
+// Semua route role membutuhkan login
+router.use(authenticateJWT);
+
 // GET /api/v1/roles
-router.get("/", authenticateJWT, listRolesController);
+router.get("/", asyncHandler(listRolesController));
 
 // GET /api/v1/roles/permissions
-router.get("/permissions", authenticateJWT, listPermissionsController);
+router.get("/permissions", asyncHandler(listPermissionsController));
 
 // POST /api/v1/roles
-router.post("/", authenticateJWT, requirePermission("role","create"), createRoleController);
+router.post(
+    "/",
+    requirePermission("role", "create"),
+    validate({ body: createRoleSchema }),
+    asyncHandler(createRoleController)
+);
 
 export default router;
