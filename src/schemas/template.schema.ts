@@ -35,7 +35,14 @@ export const createTemplateVersionSchema = z.object({
 
 
 
-export type CreateTemplateInput = z.infer<typeof createTemplateSchema>
-export type UpdateTemplateInput = z.infer<typeof updateTemplateSchema>
-export type CreateTemplateVersionInput = z.infer<typeof createTemplateVersionSchema>
+export const previewTemplateSchema = z.object({
+    contactId: z.coerce.number().optional(),
+    sampleContact: z.any().optional(),
+    orgName: z.string().optional(),
+});
+
+export type CreateTemplateInput = z.infer<typeof createTemplateSchema>;
+export type UpdateTemplateInput = z.infer<typeof updateTemplateSchema>;
+export type CreateTemplateVersionInput = z.infer<typeof createTemplateVersionSchema>;
+export type PreviewTemplateInput = z.infer<typeof previewTemplateSchema>;
 

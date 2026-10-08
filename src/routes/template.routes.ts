@@ -10,6 +10,14 @@ import {
 } from "../controllers/template.controller";
 import { authenticateJWT } from "../middlewares/auth.middleware";
 import { requirePermission } from "../middlewares/rbac.middleware";
+import { asyncHandler } from "../shared/middleware/asyncHandler";
+import { validate } from "../shared/middleware/validate";
+import {
+    createTemplateSchema,
+    updateTemplateSchema,
+    createTemplateVersionSchema,
+    previewTemplateSchema,
+} from "../schemas/template.schema";
 
 const router = Router();
 
@@ -28,7 +36,7 @@ router.use(authenticateJWT);
  *       200:
  *         description: Berhasil mengambil daftar template
  */
-router.get("/", requirePermission("templates", "view"), getTemplatesController);
+router.get("/", requirePermission("templates", "view"), asyncHandler(getTemplatesController));
 
 /**
  * @openapi
@@ -49,7 +57,7 @@ router.get("/", requirePermission("templates", "view"), getTemplatesController);
  *       404:
  *         description: Template tidak ditemukan
  */
-router.get("/:id", requirePermission("templates", "view"), getTemplateByIdController);
+router.get("/:id", requirePermission("templates", "view"), asyncHandler(getTemplateByIdController));
 
 /**
  * @openapi
@@ -76,7 +84,12 @@ router.get("/:id", requirePermission("templates", "view"), getTemplateByIdContro
  *       201:
  *         description: Template berhasil dibuat
  */
-router.post("/", requirePermission("templates", "create"), createTemplateController);
+router.post(
+    "/",
+    requirePermission("templates", "create"),
+    validate({ body: createTemplateSchema }),
+    asyncHandler(createTemplateController)
+);
 
 /**
  * @openapi
@@ -95,7 +108,12 @@ router.post("/", requirePermission("templates", "create"), createTemplateControl
  *       200:
  *         description: Template berhasil diperbarui
  */
-router.put("/:id", requirePermission("templates", "edit"), updateTemplateController);
+router.put(
+    "/:id",
+    requirePermission("templates", "edit"),
+    validate({ body: updateTemplateSchema }),
+    asyncHandler(updateTemplateController)
+);
 
 /**
  * @openapi
@@ -114,7 +132,12 @@ router.put("/:id", requirePermission("templates", "edit"), updateTemplateControl
  *       201:
  *         description: Versi template baru berhasil dibuat
  */
-router.post("/:id/versions", requirePermission("templates", "edit"), createTemplateVersionController);
+router.post(
+    "/:id/versions",
+    requirePermission("templates", "edit"),
+    validate({ body: createTemplateVersionSchema }),
+    asyncHandler(createTemplateVersionController)
+);
 
 /**
  * @openapi
@@ -133,7 +156,12 @@ router.post("/:id/versions", requirePermission("templates", "edit"), createTempl
  *       200:
  *         description: Berhasil membuat pratinjau template
  */
-router.post("/:id/preview", requirePermission("templates", "view"), previewTemplateController);
+router.post(
+    "/:id/preview",
+    requirePermission("templates", "view"),
+    validate({ body: previewTemplateSchema }),
+    asyncHandler(previewTemplateController)
+);
 
 /**
  * @openapi
@@ -152,6 +180,6 @@ router.post("/:id/preview", requirePermission("templates", "view"), previewTempl
  *       200:
  *         description: Template berhasil dihapus
  */
-router.delete("/:id", requirePermission("templates", "delete"), deleteTemplateController);
+router.delete("/:id", requirePermission("templates", "delete"), asyncHandler(deleteTemplateController));
 
 export default router;
