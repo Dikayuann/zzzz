@@ -8,9 +8,21 @@ import {
     logoutController,
     forgotPasswordController,
     resetPasswordController,
-    changePasswordController
+    changePasswordController,
 } from "../controllers/auth.controller";
 import { authenticateJWT } from "../middlewares/auth.middleware";
+import { asyncHandler } from "../shared/middleware/asyncHandler";
+import { validate } from "../shared/middleware/validate";
+import {
+    registerSchema,
+    verifiyEmailSchema,
+    resendVerificationSchema,
+    loginSchema,
+    refreshTokenSchema,
+    forgotPasswordSchema,
+    resetPasswordSchema,
+    changePasswordSchema,
+} from "../schemas/auth.schema";
 
 const router = Router();
 
@@ -36,7 +48,7 @@ const router = Router();
  *       201:
  *         description: Register berhasil
  */
-router.post('/register', registerController);
+router.post("/register", validate({ body: registerSchema }), asyncHandler(registerController));
 
 /**
  * @openapi
@@ -57,7 +69,7 @@ router.post('/register', registerController);
  *       200:
  *         description: Email berhasil diverifikasi
  */
-router.post('/verify-email', verifyEmailController);
+router.post("/verify-email", validate({ body: verifiyEmailSchema }), asyncHandler(verifyEmailController));
 
 /**
  * @openapi
@@ -78,7 +90,11 @@ router.post('/verify-email', verifyEmailController);
  *       200:
  *         description: Email verifikasi baru dikirim
  */
-router.post('/resend-verification', resendVerificationController);
+router.post(
+    "/resend-verification",
+    validate({ body: resendVerificationSchema }),
+    asyncHandler(resendVerificationController)
+);
 
 /**
  * @openapi
@@ -100,7 +116,7 @@ router.post('/resend-verification', resendVerificationController);
  *       200:
  *         description: Login berhasil
  */
-router.post('/login', loginController);
+router.post("/login", validate({ body: loginSchema }), asyncHandler(loginController));
 
 /**
  * @openapi
@@ -121,7 +137,7 @@ router.post('/login', loginController);
  *       200:
  *         description: Token berhasil diperbarui
  */
-router.post('/refresh', refreshTokenController);
+router.post("/refresh", validate({ body: refreshTokenSchema }), asyncHandler(refreshTokenController));
 
 /**
  * @openapi
@@ -142,7 +158,7 @@ router.post('/refresh', refreshTokenController);
  *       200:
  *         description: Logout berhasil
  */
-router.post('/logout', logoutController);
+router.post("/logout", validate({ body: refreshTokenSchema }), asyncHandler(logoutController));
 
 /**
  * @openapi
@@ -163,7 +179,11 @@ router.post('/logout', logoutController);
  *       200:
  *         description: Instruksi reset password dikirim
  */
-router.post('/forgot-password', forgotPasswordController);
+router.post(
+    "/forgot-password",
+    validate({ body: forgotPasswordSchema }),
+    asyncHandler(forgotPasswordController)
+);
 
 /**
  * @openapi
@@ -185,7 +205,11 @@ router.post('/forgot-password', forgotPasswordController);
  *       200:
  *         description: Password berhasil diubah
  */
-router.post('/reset-password', resetPasswordController);
+router.post(
+    "/reset-password",
+    validate({ body: resetPasswordSchema }),
+    asyncHandler(resetPasswordController)
+);
 
 /**
  * @openapi
@@ -209,6 +233,11 @@ router.post('/reset-password', resetPasswordController);
  *       200:
  *         description: Password berhasil diubah
  */
-router.post('/change-password', authenticateJWT, changePasswordController);
+router.post(
+    "/change-password",
+    authenticateJWT,
+    validate({ body: changePasswordSchema }),
+    asyncHandler(changePasswordController)
+);
 
 export default router;
