@@ -7,7 +7,9 @@ import {
     UpdateTemplateInput,
     CreateTemplateVersionInput,
     PreviewTemplateInput,
+    TestSendTemplateInput,
 } from "../schemas/template.schema";
+import {sendEmail} from "../lib/mailer";
 
 export const getTemplates = async (tenantId: number) => {
     const templates = await prisma.template.findMany({
@@ -218,5 +220,106 @@ export const previewTemplate = async (tenantId: number, templateId: number, data
         contentHtml: applyMergeTags(latestVersion.contentHtml, contactData, { orgName }),
         contentWhatsapp: applyMergeTags(latestVersion.contentWhatsapp, contactData, { orgName }),
         contentTelegram: applyMergeTags(latestVersion.contentTelegram, contactData, { orgName }),
+    };
+};
+
+export const testSendTemplate = async (
+    tenantId: number,
+    actorId: number,
+    templateId: number | null,
+    data: TestSendTemplateInput) => {
+
+    let rawSubject = data.subject || "Uji coba Template - Campaign Blast";
+    let rawHtml = data.contentHtml || "";
+
+    // jika ada templateId ambil template tersimpan dari database
+    if (templateId) {
+        const template = await getTemplateById(tenantId, templateId);
+        const latestVersion = template.versions[0];
+        if (!latestVersion) {
+            throw new AppError("Template belum memiliki versi konten", 400);
+        }
+        if (!data.subject) {
+            rawSubject = latestVersion.subject || rawSubject;
+        }
+        if (!data.contentHtml) {
+            rawHtml = latestVersion.contentHtml || rawHtml;
+        }
+    }
+
+    if (!rawHtml.trim()) {
+        throw new AppError("Konten email tidak boleh kosong", 400);
+    }
+
+    // Siapkan data kontak untuk merge tags (bisa dari DB atau sampel)
+    let contactData: any = data.sampleContact || null;
+    if (data.contactId) {
+        const foundContact = await prisma.contact.findFirst({
+            where: {id: Number(data.contactId), tenantId },
+        });
+
+        if (foundContact) {
+            const nameParts = (foundContact.name || "").trim().split(/\s+/);;
+            contactData = {
+                firstName: nameParts[0] || "",
+                lastName: nameParts.slice(1).join(" ") || "",
+                name: foundContact.name,
+                email: foundContact.email,
+                phone: foundContact.phone || foundContact.whatsappNumber,
+                customFields: foundContact.customFields as Record<string, any>,
+            };
+        }
+    }
+
+    // Default: otomatis gunakan nama user yang sedang login
+    if (!contactData) {
+        const actor = await prisma.user.findUnique({
+            where: { id: actorId },
+            select: { name: true },
+        });
+        const actorName = actor?.name || "Pelanggan";
+        const nameParts = actorName.trim().split(/\s+/);
+        contactData = {
+            firstName: nameParts[0] || actorName,
+            lastName: nameParts.slice(1).join(" ") || "",
+            name: actorName,
+            email: data.targetEmail,
+            phone: "+62 812-3456-7890",
+        };
+    }
+
+    const orgName = data.orgName || "Campaign Blast";
+
+    // render merge tags [ada subject dan isi html
+    const renderedSubject = applyMergeTags(rawSubject, contactData,  { orgName });
+    const renderedHtml = applyMergeTags(rawHtml, contactData, { orgName });
+
+
+    // kirim email via SMTP
+    const sendResult = await sendEmail({
+        tenantId,
+        to: data.targetEmail,
+        subject: renderedSubject,
+        html: renderedHtml
+    });
+
+    // mencatat ke audit log
+    await logAudit({
+        tenantId,
+        actorId,
+        action: "TEST_SEND_TEMPLATE",
+        entityType: "TEMPLATE",
+        entityId: templateId || undefined,
+        details: {
+            targetEmail: data.targetEmail,
+            subject: renderedSubject,
+            messageId: sendResult.messageId,
+        },
+    });
+
+    return {
+        success: true,
+        message: `Email uji coba berhasil dikirim ke ${data.targetEmail}`,
+        messageId: sendResult.messageId,
     };
 };

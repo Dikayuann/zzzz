@@ -7,6 +7,7 @@ import {
     createTemplateVersionController,
     deleteTemplateController,
     previewTemplateController,
+    testSendTemplateController,
 } from "../controllers/template.controller";
 import { authenticateJWT } from "../middlewares/auth.middleware";
 import { requirePermission } from "../middlewares/rbac.middleware";
@@ -17,6 +18,7 @@ import {
     updateTemplateSchema,
     createTemplateVersionSchema,
     previewTemplateSchema,
+    testSendTemplateSchema,
 } from "../schemas/template.schema";
 
 const router = Router();
@@ -181,5 +183,23 @@ router.post(
  *         description: Template berhasil dihapus
  */
 router.delete("/:id", requirePermission("templates", "delete"), asyncHandler(deleteTemplateController));
+
+
+// 1. Kirim test email dari draf yang sedang diedit (tanpa harus save dulu)
+router.post(
+    "/test-send",
+    requirePermission("templates", "view"),
+    validate({ body: testSendTemplateSchema }),
+    asyncHandler(testSendTemplateController)
+);
+
+// 2. Kirim test email dari template yang sudah tersimpan di database
+router.post(
+    "/:id/test-send",
+    requirePermission("templates", "view"),
+    validate({ body: testSendTemplateSchema }),
+    asyncHandler(testSendTemplateController)
+);
+
 
 export default router;

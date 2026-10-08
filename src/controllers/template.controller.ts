@@ -7,6 +7,7 @@ import {
     createTemplateVersion,
     deleteTemplate,
     previewTemplate,
+    testSendTemplate,
 } from "../services/template.service";
 
 export const getTemplatesController = async (req: Request, res: Response) => {
@@ -88,3 +89,12 @@ export const previewTemplateController = async (req: Request, res: Response) => 
         data: preview,
     });
 };
+
+export const testSendTemplateController = async (req: Request, res: Response) => {
+    const tenantId = req.user!.tenantId;
+    const actorId = req.user!.userId;
+    const templateId = req.params.id ? Number(req.params.id) : null;
+
+    const result = await testSendTemplate(tenantId, actorId, templateId, req.body);
+    return res.status(200).json(result);
+}

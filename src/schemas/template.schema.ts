@@ -41,8 +41,18 @@ export const previewTemplateSchema = z.object({
     orgName: z.string().optional(),
 });
 
+export const testSendTemplateSchema = z.object({
+    targetEmail: z.string().trim().email("Format email tujuan tidak valid"),
+    subject: z.string().trim().optional(),
+    contentHtml: z.string().optional(),
+    contactId: z.coerce.number().optional(),
+    sampleContact: z.any().optional(),
+    orgName: z.string().trim().optional(),
+});
+
+
 export type CreateTemplateInput = z.infer<typeof createTemplateSchema>;
 export type UpdateTemplateInput = z.infer<typeof updateTemplateSchema>;
 export type CreateTemplateVersionInput = z.infer<typeof createTemplateVersionSchema>;
 export type PreviewTemplateInput = z.infer<typeof previewTemplateSchema>;
-
+export type TestSendTemplateInput = z.infer<typeof testSendTemplateSchema>;
