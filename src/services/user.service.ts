@@ -4,6 +4,8 @@ import prisma from "../lib/prisma";
 import { logAudit } from "../lib/audit";
 import { AppError } from "../shared/errors/AppError";
 import { InviteUserInput, UpdateUserRoleInput } from "../schemas/user.schema";
+import { sendInvitationEmail } from "../lib/system-mailer";
+
 
 const BCRYPT_ROUNDS = 12;
 
@@ -148,6 +150,17 @@ export const inviteUser = async (
         entityId: newUser.id,
         details: { email: newUser.email, role: role.name },
     });
+
+    // ambil nama tenant untuk dicantumkan di email undangan
+    const tenant = await prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { name: true },
+    })
+
+    const organizationName = tenant?.name || "Organisasi";
+
+    // mengirim email undangan
+    await sendInvitationEmail(newUser.email, newUser.name, organizationName, rawInviteToken);
 
     return {
         user: newUser,

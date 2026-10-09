@@ -11,6 +11,7 @@ import {
     ResetPasswordInput,
     ChangePasswordInput,
 } from "../schemas/auth.schema";
+import { sendOtpEmail, sendPasswordResetEmail } from "../lib/system-mailer";
 import { logAudit } from "../lib/audit";
 import { AppError } from "../shared/errors/AppError";
 
@@ -93,6 +94,8 @@ export const registerUser = async (data: RegisterInput) => {
             entityId: result.user.id,
             details: { email: data.email, organizationName: data.organizationName },
         });
+        // Kirim email OTP ke pendaftar
+        await sendOtpEmail(data.email, data.name, result.rawToken);
 
         return result;
     } catch (error: any) {
@@ -159,6 +162,8 @@ export const resendVerificationEmail = async (email: string) => {
             expiresAt,
         },
     });
+    // Kirim ulang email OTP
+    await sendOtpEmail(user.email, user.name, rawToken);
 
     return {
         success: true,
@@ -411,6 +416,8 @@ export const forgotPassword = async (data: ForgotPasswordInput) => {
         entityId: user.id,
         details: { email: user.email },
     });
+
+    await sendPasswordResetEmail(user.email, user.name, rawToken);
 
     return { success: true, rawToken };
 };
