@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from 'express';
 import cors from 'cors';
 import {setupSwagger} from "./config/swagger";
@@ -10,6 +11,8 @@ import listRoutes from "./routes/list.routes";
 import tagRoutes from "./routes/tag.routes";
 import smtpRoutes from "./routes/smtp.routes";
 import templateRoutes from "./routes/template.routes";
+import telegramRoutes from "./routes/telegram.routes";
+
 
 const app = express();
 
@@ -30,7 +33,7 @@ app.use('/api/v1/tags', tagRoutes);
 app.use('/api/v1/templates', templateRoutes);
 app.use('/api/v1/users', userRoutes)
 app.use('/api/v1/settings/smtp', smtpRoutes);
-
+app.use('/api/v1/channels/telegram', telegramRoutes);
 app.use(errorHandler);
 
 

@@ -22,11 +22,13 @@ model Tenant {
   roles     Role[]
   auditLogs AuditLog[]
 
-  contacts   Contact[]
-  lists      List[]
-  tags       Tag[]
-  smtpConfig smtpConfig?
-  templates  Template[]
+  contacts      Contact[]
+  lists         List[]
+  tags          Tag[]
+  smtpConfig    smtpConfig?
+  telegramBot   TelegramBot?
+  templates     Template[]
+  telegramBotId Int?
 
   @@map("tenants")
 }
@@ -307,4 +309,21 @@ model TemplateVersion {
   @@unique([templateId, versionNo], map: "uq_template_version")
   @@index([metaTemplateId], map: "idx_template_meta_id")
   @@map("template_versions")
+}
+
+model TelegramBot {
+  id           Int       @id @default(autoincrement())
+  tenantId     Int       @unique @map("tenant_id")
+  botToken     String    @map("bot_token") @db.VarChar(255)
+  botUsername  String?   @map("bot_username") @db.VarChar(100)
+  botName      String?   @map("bot_name") @db.VarChar(100)
+  targetChatId String?   @map("target_chat_id") @db.VarChar(100)
+  status       String    @default("disconnected") @db.VarChar(50) // connected / disconnected
+  connectedAt  DateTime? @map("connected_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("telegram_bots")
 }
