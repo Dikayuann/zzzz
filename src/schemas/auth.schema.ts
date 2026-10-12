@@ -20,6 +20,7 @@ export const registerSchema = z.object({
 // verify email schema
 export const verifiyEmailSchema = z.object({
     token: z.string().min(1, "Token verifikasi wajib diisi"),
+    email: z.string().email("Format email tidak valid").optional(),
 });
 
 // login schema

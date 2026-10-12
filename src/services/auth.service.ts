@@ -31,7 +31,7 @@ export const registerUser = async (data: RegisterInput) => {
     // Buat kode OTP 6 digit acak & hash SHA-256 untuk disimpan ke DB
     const rawToken = Math.floor(100000 + crypto.randomInt(900000)).toString();
     const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
-    const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 menit
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 menit
 
     try {
         const result = await prisma.$transaction(async (tx) => {
@@ -94,8 +94,6 @@ export const registerUser = async (data: RegisterInput) => {
             entityId: result.user.id,
             details: { email: data.email, organizationName: data.organizationName },
         });
-        // Kirim email OTP ke pendaftar
-        await sendOtpEmail(data.email, data.name, result.rawToken);
 
         return result;
     } catch (error: any) {
@@ -111,15 +109,86 @@ export const verifyEmail = async (data: VerifyEmailInput) => {
     const tokenHash = crypto.createHash("sha256").update(data.token).digest("hex");
 
     return prisma.$transaction(async (tx) => {
+        // Jika email disertakan, lakukan proteksi brute-force per user
+        let user: any = null;
+        if (data.email) {
+            user = await tx.user.findUnique({
+                where: { email: data.email },
+            });
+        }
+
+        // Cari record token aktif
         const record = await tx.emailVerification.findFirst({
             where: {
                 tokenHash,
                 usedAt: null,
                 expiresAt: { gt: new Date() },
+                ...(user ? { userId: user.id } : {}),
             },
         });
 
         if (!record) {
+            // Jika user teridentifikasi, hitung percobaan salah
+            if (user) {
+                const activeOtp = await tx.emailVerification.findFirst({
+                    where: {
+                        userId: user.id,
+                        usedAt: null,
+                        expiresAt: { gt: new Date() },
+                    },
+                    orderBy: { createdAt: "desc" },
+                });
+
+                if (activeOtp) {
+                    const failedCount = await tx.auditLog.count({
+                        where: {
+                            entityId: user.id,
+                            action: "OTP_VERIFY_FAILED",
+                            createdAt: { gte: activeOtp.createdAt },
+                        },
+                    });
+
+                    const currentFailed = failedCount + 1;
+
+                    if (currentFailed >= 5) {
+                        // Hanguskan OTP karena 5x salah berturut-turut
+                        await tx.emailVerification.update({
+                            where: { id: activeOtp.id },
+                            data: { expiresAt: new Date() },
+                        });
+
+                        await logAudit({
+                            tenantId: user.tenantId,
+                            actorId: user.id,
+                            action: "OTP_BURNT_MAX_ATTEMPTS",
+                            entityType: "User",
+                            entityId: user.id,
+                            details: { email: user.email, attempts: currentFailed },
+                        });
+
+                        throw new AppError(
+                            "Anda telah 5 kali salah memasukkan kode. Demi keamanan, kode OTP ini telah dinonaktifkan. Silakan klik 'Kirim ulang kode' untuk meminta kode baru.",
+                            400
+                        );
+                    }
+
+                    await logAudit({
+                        tenantId: user.tenantId,
+                        actorId: user.id,
+                        action: "OTP_VERIFY_FAILED",
+                        entityType: "User",
+                        entityId: user.id,
+                        details: { email: user.email, attempt: currentFailed },
+                    });
+
+                    const remaining = 5 - currentFailed;
+                    throw new AppError(
+                        `Kode OTP salah. Sisa kesempatan: ${remaining} kali sebelum kode hangus.`,
+                        400
+                    );
+                }
+            }
+
             throw new AppError("Token verifikasi tidak valid atau sudah kadaluarsa", 400);
         }
 
@@ -131,6 +200,16 @@ export const verifyEmail = async (data: VerifyEmailInput) => {
         await tx.user.update({
             where: { id: record.userId },
             data: { status: "ACTIVE" },
+        });
+
+        const verifiedUser = await tx.user.findUnique({ where: { id: record.userId } });
+        await logAudit({
+            tenantId: verifiedUser?.tenantId ?? undefined,
+            actorId: record.userId,
+            action: "EMAIL_VERIFIED",
+            entityType: "User",
+            entityId: record.userId,
+            details: { email: data.email },
         });
 
         return { success: true };
@@ -151,9 +230,53 @@ export const resendVerificationEmail = async (email: string) => {
         return { success: true, message: "Akun sudah aktif. Silakan langsung login." };
     }
 
+    // Rate Limiting 1: Batas Maksimal 5x Permintaan per 24 Jam
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const dailyCount = await prisma.emailVerification.count({
+        where: {
+            userId: user.id,
+            createdAt: { gte: oneDayAgo },
+        },
+    });
+
+    if (dailyCount >= 5) {
+        throw new AppError(
+            "Batas maksimum permintaan OTP harian telah tercapai (maksimal 5 kali per 24 jam). Silakan coba lagi besok.",
+            429
+        );
+    }
+
+    // Rate Limiting 2: Cooldown 60 detik sebelum boleh minta OTP baru
+    const lastVerification = await prisma.emailVerification.findFirst({
+        where: { userId: user.id },
+        orderBy: { createdAt: "desc" },
+    });
+
+    if (lastVerification) {
+        const timeSinceLast = Date.now() - new Date(lastVerification.createdAt).getTime();
+        if (timeSinceLast < 60 * 1000) {
+            const remainingSeconds = Math.ceil((60 * 1000 - timeSinceLast) / 1000);
+            throw new AppError(
+                `Harap tunggu ${remainingSeconds} detik sebelum meminta kode OTP baru.`,
+                429
+            );
+        }
+    }
+
+    // Invalidate (hanguskan) semua token lama yang belum digunakan milik user ini
+    await prisma.emailVerification.updateMany({
+        where: {
+            userId: user.id,
+            usedAt: null,
+        },
+        data: {
+            usedAt: new Date(),
+        },
+    });
+
     const rawToken = Math.floor(100000 + crypto.randomInt(900000)).toString();
     const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
-    const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 menit
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 menit
 
     await prisma.emailVerification.create({
         data: {
@@ -162,7 +285,7 @@ export const resendVerificationEmail = async (email: string) => {
             expiresAt,
         },
     });
-    // Kirim ulang email OTP
+    // Kirim email OTP
     await sendOtpEmail(user.email, user.name, rawToken);
 
     return {
@@ -391,9 +514,42 @@ export const forgotPassword = async (data: ForgotPasswordInput) => {
         where: { email: data.email },
     });
 
-    // email tidak terdaftar tetap return sukses
+    // email tidak terdaftar tetap return sukses demi keamanan
     if (!user) {
         return { success: true, rawToken: null };
+    }
+
+    // Rate Limiting 1: Batas Maksimal 5x Permintaan per 24 Jam
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const dailyCount = await prisma.passwordReset.count({
+        where: {
+            userId: user.id,
+            createdAt: { gte: oneDayAgo },
+        },
+    });
+
+    if (dailyCount >= 5) {
+        throw new AppError(
+            "Batas maksimum permintaan reset password harian telah tercapai (maksimal 5 kali per 24 jam). Silakan coba lagi besok.",
+            429
+        );
+    }
+
+    // Rate Limiting 2: Cooldown 60 Detik dari Pengiriman Terakhir
+    const lastReset = await prisma.passwordReset.findFirst({
+        where: { userId: user.id },
+        orderBy: { createdAt: "desc" },
+    });
+
+    if (lastReset) {
+        const timeSinceLast = Date.now() - new Date(lastReset.createdAt).getTime();
+        if (timeSinceLast < 60 * 1000) {
+            const remainingSeconds = Math.ceil((60 * 1000 - timeSinceLast) / 1000);
+            throw new AppError(
+                `Harap tunggu ${remainingSeconds} detik sebelum meminta link reset password baru.`,
+                429
+            );
+        }
     }
 
     const rawToken = crypto.randomBytes(32).toString("hex");

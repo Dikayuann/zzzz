@@ -104,7 +104,7 @@ export const sendOtpEmail = async (toEmail: string, recipientName: string, otpCo
         </div>
 
         <p style="margin: 0 0 8px 0; font-size: 13px; line-height: 20px; color: #64748b;">
-            Kode ini berlaku selama <strong>30 menit</strong>. Jika Anda tidak merasa melakukan pendaftaran ini, silakan abaikan pesan ini.
+            Kode ini berlaku selama <strong>10 menit</strong>. Jika Anda tidak merasa melakukan pendaftaran ini, silakan abaikan pesan ini.
         </p>
     `;
 
