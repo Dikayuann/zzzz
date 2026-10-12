@@ -4,6 +4,9 @@ import {
     connectTelegramBotController,
     sendTestTelegramMessageController,
     disconnectTelegramBotController,
+    syncTelegramSubscribersController,
+    getTelegramSubscribersController,
+    telegramWebhookController,
 } from "../controllers/telegram.controller";
 import { authenticateJWT } from "../middlewares/auth.middleware";
 import { requirePermission } from "../middlewares/rbac.middleware";
@@ -13,7 +16,10 @@ import { saveTelegramBotSchema, testTelegramMessageSchema } from "../schemas/tel
 
 const router = Router();
 
-// Semua rute Telegram Bot wajib login
+// Endpoint webhook publik Telegram (tidak perlu JWT)
+router.post("/webhook/:tenantId", asyncHandler(telegramWebhookController));
+
+// Semua rute Telegram Bot internal wajib login
 router.use(authenticateJWT);
 
 /**
@@ -70,5 +76,26 @@ router.post(
  */
 router.delete("/", requirePermission("channels", "delete"), asyncHandler(disconnectTelegramBotController));
 
+/**
+ * @openapi
+ * /channels/telegram/sync:
+ *   post:
+ *     summary: Tarik update /start dari antrean Telegram API dan rekam sebagai Kontak
+ *     tags: [Channels - Telegram]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.post("/sync", requirePermission("channels", "edit"), asyncHandler(syncTelegramSubscribersController));
+
+/**
+ * @openapi
+ * /channels/telegram/subscribers:
+ *   get:
+ *     summary: Ambil daftar subscriber Telegram yang tersimpan
+ *     tags: [Channels - Telegram]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get("/subscribers", requirePermission("channels", "view"), asyncHandler(getTelegramSubscribersController));
 
 export default router;

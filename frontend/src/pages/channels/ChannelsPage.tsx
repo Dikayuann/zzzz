@@ -10,6 +10,8 @@ import {
   ExternalLink,
   ShieldCheck,
   Smartphone,
+  ChevronDown,
+  Users,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -32,7 +34,7 @@ interface MetaWaConfig {
 }
 
 interface SmtpConfig {
-  preset: "custom" | "gmail" | "sendgrid" | "ses" | "brevo";
+  preset: "custom" | "gmail" | "sendgrid" | "ses" | "brevo" | "zoho";
   host: string;
   port: string;
   encryption: "TLS" | "SSL" | "None";
@@ -49,6 +51,14 @@ interface TelegramConfig {
   botUsername: string;
   targetChatId: string;
   parseMode: "HTML" | "MarkdownV2";
+}
+
+interface TelegramSubscriber {
+  id: number;
+  name: string;
+  teleChatId: string;
+  customFields?: { telegramUsername?: string };
+  createdAt: string;
 }
 
 export const ChannelsPage: React.FC = () => {
@@ -93,8 +103,8 @@ export const ChannelsPage: React.FC = () => {
   const [testEmailRecipient, setTestEmailRecipient] = useState("");
 
   const [smtpConfig, setSmtpConfig] = useState<SmtpConfig>({
-    preset: "gmail",
-    host: "smtp.gmail.com",
+    preset: "custom",
+    host: "",
     port: "587",
     encryption: "TLS",
     username: "",
@@ -105,16 +115,95 @@ export const ChannelsPage: React.FC = () => {
     hasPassword: false,
   });
 
-  // Ambil konfigurasi SMTP dari backend
+  // Telegram states
+  const [telegramConnected, setTelegramConnected] = useState(false);
+  const [isLoadingTelegram, setIsLoadingTelegram] = useState(false);
+  const [isSavingTelegram, setIsSavingTelegram] = useState(false);
+  const [isTestingTelegram, setIsTestingTelegram] = useState(false);
+  const [showTgToken, setShowTgToken] = useState(false);
+  const [showTgTestModal, setShowTgTestModal] = useState(false);
+  const [tgTestMessage, setTgTestMessage] = useState("Halo! Ini pesan tes siaran otomatis dari Campaign Blast.");
+  const [tgCustomChatId, setTgCustomChatId] = useState("");
+  const [tgSubscribers, setTgSubscribers] = useState<TelegramSubscriber[]>([]);
+  const [isSyncingTgSubscribers, setIsSyncingTgSubscribers] = useState(false);
+
+  const [telegramConfig, setTelegramConfig] = useState<TelegramConfig>({
+    botToken: "",
+    botUsername: "",
+    targetChatId: "",
+    parseMode: "HTML",
+  });
+
+  const fetchTgSubscribers = async () => {
+    try {
+      const res = await api.get("/channels/telegram/subscribers");
+      const list = res.data?.data?.contacts || [];
+      setTgSubscribers(list);
+      if (list.length > 0) {
+        setTgCustomChatId((prev) => prev || list[0].teleChatId);
+      }
+    } catch (err) {
+      console.error("Gagal mengambil subscriber:", err);
+    }
+  };
+
+  const handleSyncTgSubscribers = async () => {
+    setIsSyncingTgSubscribers(true);
+    try {
+      const res = await api.post("/channels/telegram/sync");
+      toast.success(res.data?.message || "Sinkronisasi subscriber berhasil!");
+      await fetchTgSubscribers();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Gagal sinkronisasi subscriber Telegram");
+    } finally {
+      setIsSyncingTgSubscribers(false);
+    }
+  };
+
+  // Ambil konfigurasi Channels dari backend saat mount
   useEffect(() => {
+    const fetchTelegram = async () => {
+      setIsLoadingTelegram(true);
+      try {
+        const res = await api.get("/channels/telegram");
+        const payload = res.data?.data || res.data;
+        const botData = payload?.bot || payload;
+        if (botData && (payload?.connected || botData?.status === "connected" || payload?.status === "connected")) {
+          const rawUsername = botData.botUsername || payload.botUsername || "";
+          setTelegramConfig((prev) => ({
+            ...prev,
+            botToken: botData.maskedToken || botData.botToken || payload.botToken || prev.botToken,
+            botUsername: rawUsername ? `@${rawUsername.replace(/^@/, "")}` : "",
+            targetChatId: botData.targetChatId || payload.targetChatId || "",
+          }));
+          setTelegramConnected(true);
+          fetchTgSubscribers();
+        } else {
+          setTelegramConnected(false);
+        }
+      } catch (err: any) {
+        console.error("Gagal mengambil konfigurasi Telegram:", err);
+      } finally {
+        setIsLoadingTelegram(false);
+      }
+    };
+
     const fetchSmtp = async () => {
       setIsLoadingSmtp(true);
       try {
         const res = await api.get("/settings/smtp");
         const data = res.data?.data;
         if (data) {
+          let detectedPreset: SmtpConfig["preset"] = "custom";
+          if (data.host?.includes("gmail.com")) detectedPreset = "gmail";
+          else if (data.host?.includes("sendgrid")) detectedPreset = "sendgrid";
+          else if (data.host?.includes("amazonaws")) detectedPreset = "ses";
+          else if (data.host?.includes("brevo")) detectedPreset = "brevo";
+          else if (data.host?.includes("zoho")) detectedPreset = "zoho";
+
           setSmtpConfig((prev) => ({
             ...prev,
+            preset: detectedPreset,
             host: data.host || "",
             port: String(data.port || 587),
             username: data.username || "",
@@ -124,7 +213,7 @@ export const ChannelsPage: React.FC = () => {
             encryption: data.encryption === "none" ? "None" : (data.encryption as "TLS" | "SSL"),
             hasPassword: Boolean(data.hasPassword),
           }));
-          setSmtpConnected(Boolean(data.verifiedAt));
+          setSmtpConnected(Boolean(data.verifiedAt || (data.host && data.hasPassword)));
         } else {
           setSmtpConnected(false);
         }
@@ -135,32 +224,9 @@ export const ChannelsPage: React.FC = () => {
       }
     };
 
+    fetchTelegram();
     fetchSmtp();
   }, []);
-
-  // Telegram states
-  const [telegramConnected, setTelegramConnected] = useState(true);
-  const [isTestingTelegram, setIsTestingTelegram] = useState(false);
-  const [showTgToken, setShowTgToken] = useState(false);
-  const [showTgTestModal, setShowTgTestModal] = useState(false);
-  const [tgTestMessage, setTgTestMessage] = useState("Halo! Ini pesan tes siaran otomatis dari Campaign Blast.");
-
-  const [telegramConfig, setTelegramConfig] = useState<TelegramConfig>(() => {
-    const saved = localStorage.getItem("channel_telegram");
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error(e);
-      }
-    }
-    return {
-      botToken: "7489234812:AAH93jf938jf-934jf_39fj49f834jf",
-      botUsername: "@AcmeCampaignBot",
-      targetChatId: "@acme_announcements",
-      parseMode: "HTML",
-    };
-  });
 
   // Auto-refresh countdown for QR Code
   useEffect(() => {
@@ -206,6 +272,14 @@ export const ChannelsPage: React.FC = () => {
         host: "smtp-relay.brevo.com",
         port: "587",
         encryption: "TLS",
+      }));
+    } else if (preset === "zoho") {
+      setSmtpConfig((prev) => ({
+        ...prev,
+        preset,
+        host: "smtp.zoho.com",
+        port: "465",
+        encryption: "SSL",
       }));
     } else {
       setSmtpConfig((prev) => ({ ...prev, preset: "custom" }));
@@ -308,7 +382,7 @@ export const ChannelsPage: React.FC = () => {
           hasPassword: Boolean(saved.hasPassword),
           password: "",
         }));
-        setSmtpConnected(Boolean(saved.verifiedAt));
+        setSmtpConnected(true);
       }
 
       toast.success("Pengaturan SMTP Email berhasil disimpan!", {
@@ -362,37 +436,103 @@ export const ChannelsPage: React.FC = () => {
   };
 
   // 3. Telegram Actions
-  const handleSaveTelegram = (e: React.FormEvent) => {
+  const handleSaveTelegram = async (e: React.FormEvent) => {
     e.preventDefault();
-    localStorage.setItem("channel_telegram", JSON.stringify(telegramConfig));
-    setTelegramConnected(true);
-    toast.success("Pengaturan Telegram Bot berhasil disimpan!");
+    if (!telegramConfig.botToken.trim()) {
+      toast.error("Bot Token Telegram wajib diisi");
+      return;
+    }
+
+    setIsSavingTelegram(true);
+    try {
+      const res = await api.post("/channels/telegram", {
+        botToken: telegramConfig.botToken,
+        targetChatId: telegramConfig.targetChatId ? telegramConfig.targetChatId.trim() : undefined,
+      });
+
+      const payload = res.data?.data || res.data;
+      const botData = payload?.bot || payload;
+      const rawUsername = botData?.botUsername || payload?.botUsername || "";
+      const botName = botData?.botName || payload?.botName || "";
+
+      if (botData) {
+        setTelegramConfig((prev) => ({
+          ...prev,
+          botToken: botData.maskedToken || botData.botToken || payload.botToken || prev.botToken,
+          botUsername: rawUsername ? `@${rawUsername.replace(/^@/, "")}` : prev.botUsername,
+          targetChatId: botData.targetChatId || payload.targetChatId || "",
+        }));
+      }
+      setTelegramConnected(true);
+      toast.success("Bot Telegram berhasil terhubung!", {
+        description: rawUsername
+          ? `${botName ? `${botName} (` : ""}${rawUsername.startsWith("@") ? rawUsername : `@${rawUsername}`}${botName ? ")" : ""} siap digunakan untuk broadcast.`
+          : "Konfigurasi bot tersimpan.",
+      });
+    } catch (err: any) {
+      const msg = err.response?.data?.message || "Gagal menghubungkan Bot Telegram";
+      toast.error(msg, {
+        description: err.response?.data?.detail || "Pastikan API Token dari @BotFather sudah benar dan valid.",
+      });
+    } finally {
+      setIsSavingTelegram(false);
+    }
   };
 
   const handleVerifyTelegram = () => {
-    setIsTestingTelegram(true);
-    setTimeout(() => {
-      setIsTestingTelegram(false);
-      setTelegramConnected(true);
-      setShowTgTestModal(true);
-      toast.success("Token Telegram Bot Terverifikasi!", {
-        description: `Bot ${telegramConfig.botUsername} aktif dan memiliki izin broadcast.`,
-      });
-    }, 900);
+    if (tgSubscribers.length > 0 && !tgCustomChatId) {
+      setTgCustomChatId(tgSubscribers[0].teleChatId);
+    }
+    setShowTgTestModal(true);
   };
 
-  const handleSendTgTest = () => {
-    toast.promise(
-      new Promise((resolve) => setTimeout(resolve, 1100)),
-      {
-        loading: `Mengirim siaran tes ke ${telegramConfig.targetChatId}...`,
-        success: () => {
-          setShowTgTestModal(false);
-          return `Pesan tes berhasil dikirim ke ${telegramConfig.targetChatId}`;
-        },
-        error: "Gagal mengirim ke channel Telegram",
-      }
-    );
+  const handleSendTgTest = async () => {
+    const destination = tgCustomChatId.trim() || telegramConfig.targetChatId.trim();
+    if (!destination) {
+      toast.error("Tujuan Chat ID / User ID wajib diisi!", {
+        description: "Masukkan User ID Anda (pribadi setelah klik /start di bot) atau @username_channel.",
+      });
+      return;
+    }
+
+    setIsTestingTelegram(true);
+    try {
+      const res = await api.post("/channels/telegram/test", {
+        chatId: destination,
+        message: tgTestMessage.trim() || undefined,
+      });
+
+      setShowTgTestModal(false);
+      setTelegramConnected(true);
+      toast.success("Pesan Tes Telegram Berhasil Terkirim!", {
+        description: res.data?.message || `Pesan tes berhasil dikirim ke ${destination}.`,
+      });
+    } catch (err: any) {
+      const msg = err.response?.data?.message || "Gagal mengirim pesan tes Telegram";
+      toast.error(msg, {
+        description: err.response?.data?.detail || "Pastikan penerima sudah klik /start pada bot atau bot telah menjadi Admin di grup/channel.",
+      });
+    } finally {
+      setIsTestingTelegram(false);
+    }
+  };
+
+  const handleDisconnectTelegram = async () => {
+    if (!confirm("Apakah Anda yakin ingin memutuskan koneksi Bot Telegram ini?")) return;
+
+    try {
+      await api.delete("/channels/telegram");
+      setTelegramConnected(false);
+      setTelegramConfig({
+        botToken: "",
+        botUsername: "",
+        targetChatId: "",
+        parseMode: "HTML",
+      });
+      toast.success("Koneksi Bot Telegram berhasil diputus");
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Gagal memutus koneksi Bot Telegram");
+    }
   };
 
   return (
@@ -421,15 +561,11 @@ export const ChannelsPage: React.FC = () => {
         >
           <Mail className="h-4 w-4" />
           <span>Email</span>
-          <span
-            className={`h-2 w-2 rounded-full ${
-              smtpConnected
-                ? "bg-emerald-500"
-                : smtpConfig.hasPassword
-                ? "bg-amber-400"
-                : "bg-slate-300"
-            }`}
-          />
+          {smtpConnected || smtpConfig.hasPassword ? (
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          ) : (
+            <span className="h-2 w-2 rounded-full bg-slate-300" />
+          )}
         </button>
 
         {/* Telegram Tab */}
@@ -444,11 +580,11 @@ export const ChannelsPage: React.FC = () => {
         >
           <Send className="h-4 w-4" />
           <span>Telegram</span>
-          <span
-            className={`h-2 w-2 rounded-full ${
-              telegramConnected ? "bg-emerald-500" : "bg-amber-400"
-            }`}
-          />
+          {telegramConnected ? (
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          ) : (
+            <span className="h-2 w-2 rounded-full bg-slate-300" />
+          )}
         </button>
 
         {/* WhatsApp Tab */}
@@ -787,66 +923,63 @@ export const ChannelsPage: React.FC = () => {
 
             {/* Status Pill */}
             <div
-              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${
-                smtpConnected
-                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                  : smtpConfig.hasPassword
-                  ? "bg-amber-50 text-amber-700 border-amber-200"
-                  : "bg-slate-100 text-slate-600 border-slate-200"
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold border transition-all ${
+                smtpConnected || smtpConfig.hasPassword
+                  ? "bg-emerald-50 text-emerald-700 border-emerald-300 shadow-2xs"
+                  : "bg-slate-100 text-slate-500 border-slate-200"
               }`}
             >
               <span
-                className={`h-2 w-2 rounded-full ${
-                  smtpConnected
-                    ? "bg-emerald-500 animate-pulse"
-                    : smtpConfig.hasPassword
-                    ? "bg-amber-500"
+                className={`h-2.5 w-2.5 rounded-full ${
+                  smtpConnected || smtpConfig.hasPassword
+                    ? "bg-emerald-500 ring-2 ring-emerald-200 animate-pulse"
                     : "bg-slate-400"
                 }`}
               />
               <span>
-                {smtpConnected
+                {smtpConnected || smtpConfig.hasPassword
                   ? "Terhubung"
-                  : smtpConfig.hasPassword
-                  ? "Tersimpan (Belum Diverifikasi)"
                   : "Belum Dikonfigurasi"}
               </span>
             </div>
           </div>
 
-          {/* Quick Provider Presets */}
-          <div className="space-y-2">
+          {/* Quick Provider Presets  Dropdown */}
+          <div className="space-y-1.5 max-w-md">
             <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-              PILIH PRESET PROVIDER EMAIL
+              Provider / Layanan Email
             </label>
-            <div className="flex items-center gap-2 flex-wrap">
-              {[
-                { id: "gmail", name: "Google Workspace / Gmail" },
-                { id: "sendgrid", name: "SendGrid API" },
-                { id: "ses", name: "Amazon SES" },
-                { id: "brevo", name: "Brevo (Sendinblue)" },
-                { id: "custom", name: "Custom SMTP" },
-              ].map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => handleSelectSmtpPreset(p.id as SmtpConfig["preset"])}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                    smtpConfig.preset === p.id
-                      ? "bg-slate-900 text-white shadow-2xs"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200/80"
-                  }`}
-                >
-                  {p.name}
-                </button>
-              ))}
+            <div className="relative">
+              <select
+                value={smtpConfig.preset}
+                onChange={(e) => handleSelectSmtpPreset(e.target.value as SmtpConfig["preset"])}
+                className="w-full h-11 px-3.5 pr-10 rounded-xl border border-slate-200/90 bg-slate-50/50 hover:bg-white focus:bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 transition shadow-2xs cursor-pointer appearance-none"
+              >
+                <option value="custom">Custom SMTP Server (Rekomendasi / Fleksibel)</option>
+                <option value="gmail">Google Workspace / Gmail</option>
+                <option value="sendgrid">SendGrid (SMTP Relay)</option>
+                <option value="ses">Amazon SES (Simple Email Service)</option>
+                <option value="brevo">Brevo (Sendinblue)</option>
+                <option value="zoho">Zoho Mail</option>
+              </select>
+              <div className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+                <ChevronDown className="h-4 w-4" />
+              </div>
             </div>
+            <p className="text-[11px] text-slate-400">
+              Pilih provider yang Anda gunakan untuk mengisi konfigurasi server standar secara otomatis.
+            </p>
           </div>
 
           {/* Preset Helper Alert */}
           {smtpConfig.preset === "gmail" && (
             <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200/90 text-xs text-amber-900 leading-relaxed">
               <strong>Tips Gmail:</strong> Gunakan <strong>App Password 16 karakter</strong> (bukan password akun biasa). Pastikan Verifikasi 2 Langkah (2FA) di akun Google Anda telah aktif.
+            </div>
+          )}
+          {smtpConfig.preset === "zoho" && (
+            <div className="p-3.5 rounded-2xl bg-blue-50/70 border border-blue-200/90 text-xs text-blue-900 leading-relaxed">
+              <strong>Tips Zoho:</strong> Gunakan port <strong>465 (SSL)</strong> dan <strong>Application-Specific Password</strong> dari panel Zoho Security Anda.
             </div>
           )}
 
@@ -1027,34 +1160,49 @@ export const ChannelsPage: React.FC = () => {
             {/* Status Pill */}
             <div
               className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${
-                telegramConnected
+                isLoadingTelegram
+                  ? "bg-slate-50 text-slate-600 border-slate-200"
+                  : telegramConnected
                   ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                   : "bg-amber-50 text-amber-700 border-amber-200"
               }`}
             >
-              <span
-                className={`h-2 w-2 rounded-full ${
-                  telegramConnected ? "bg-emerald-500" : "bg-amber-500"
-                }`}
-              />
-              <span>{telegramConnected ? "Terhubung" : "Belum terhubung"}</span>
+              {isLoadingTelegram ? (
+                <RefreshCw className="h-3 w-3 animate-spin text-slate-500" />
+              ) : (
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    telegramConnected ? "bg-emerald-500" : "bg-amber-500"
+                  }`}
+                />
+              )}
+              <span>
+                {isLoadingTelegram
+                  ? "Memeriksa status..."
+                  : telegramConnected
+                  ? "Terhubung"
+                  : "Belum terhubung"}
+              </span>
             </div>
           </div>
 
           {/* Help Banner */}
-          <div className="p-4 rounded-2xl bg-sky-50/70 border border-sky-200/90 text-xs text-sky-950 leading-relaxed">
-            <span>Panduan setup: Buka Telegram lalu hubungi </span>
-            <a
-              href="https://t.me/BotFather"
-              target="_blank"
-              rel="noreferrer"
-              className="font-bold underline text-sky-700 hover:text-sky-900 inline-flex items-center gap-1"
-            >
-              @BotFather <ExternalLink className="h-3 w-3" />
-            </a>
-            <span>
-              , ketik <code className="px-1.5 py-0.5 bg-sky-100/70 rounded text-[11px] font-mono">/newbot</code> untuk mendapatkan API Token. Tambahkan bot Anda sebagai <strong>Administrator</strong> pada Channel target agar dapat memposting pesan secara otomatis.
-            </span>
+          <div className="p-4 rounded-2xl bg-sky-50/70 border border-sky-200/90 text-xs text-sky-950 leading-relaxed space-y-1.5">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-sky-900">Tips Penggunaan Telegram Broadcast:</span>
+            </div>
+            <ul className="list-disc list-inside space-y-1 text-slate-700">
+              <li>
+                <strong>Blast Langsung ke Kontak Pribadi:</strong> Pengguna/kontak cukup membuka bot Anda{" "}
+                <span className="font-bold text-sky-700">
+                  {telegramConfig.botUsername || "@BotAnda"}
+                </span>{" "}
+                lalu klik <strong>Start</strong> (<code className="px-1 py-0.5 bg-sky-100 rounded text-[11px] font-mono">/start</code>). Bot bisa langsung mengirim pesan personal 1-on-1 tanpa perlu grup atau channel sama sekali.
+              </li>
+              <li>
+                <strong>Broadcast ke Grup / Channel (Opsional):</strong> Jika ingin siaran ke Channel publik atau grup, tambahkan bot Anda sebagai <strong>Administrator</strong> di channel/grup tersebut.
+              </li>
+            </ul>
           </div>
 
           <form onSubmit={handleSaveTelegram} className="space-y-4">
@@ -1089,26 +1237,25 @@ export const ChannelsPage: React.FC = () => {
 
               <div className="space-y-1.5">
                 <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-                  BOT USERNAME
+                  BOT USERNAME (OTOMATIS)
                 </label>
                 <input
                   type="text"
                   value={telegramConfig.botUsername}
-                  onChange={(e) =>
-                    setTelegramConfig({
-                      ...telegramConfig,
-                      botUsername: e.target.value,
-                    })
-                  }
-                  placeholder="@AcmeCampaignBot"
-                  className="w-full h-11 px-4 rounded-xl border border-slate-200/90 bg-slate-50/40 focus:bg-white text-xs text-slate-800 focus:outline-none focus:border-sky-500 transition shadow-2xs"
+                  readOnly
+                  placeholder="@BotAnda (terdeteksi otomatis saat terhubung)"
+                  className={`w-full h-11 px-4 rounded-xl border text-xs font-mono shadow-2xs transition ${
+                    telegramConfig.botUsername
+                      ? "bg-emerald-50/70 border-emerald-300 text-emerald-800 font-bold"
+                      : "bg-slate-100/70 border-slate-200/90 text-slate-700 cursor-not-allowed"
+                  }`}
                 />
               </div>
             </div>
 
             <div className="space-y-1.5">
               <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-                TARGET BROADCAST CHANNEL / CHAT ID
+                TARGET DEFAULT CHAT ID / CHANNEL (OPSIONAL)
               </label>
               <input
                 type="text"
@@ -1119,40 +1266,106 @@ export const ChannelsPage: React.FC = () => {
                     targetChatId: e.target.value,
                   })
                 }
-                placeholder="@acme_announcements atau -1001234567890"
+                placeholder="User ID pribadi (misal 123456789) atau @nama_channel"
                 className="w-full h-11 px-4 rounded-xl border border-slate-200/90 bg-slate-50/40 focus:bg-white text-xs text-slate-800 focus:outline-none focus:border-sky-500 transition shadow-2xs font-mono"
               />
               <p className="text-xs text-slate-400 mt-1">
-                Gunakan format username channel publik (misal <code className="text-slate-600">@nama_channel</code>) atau numeric Chat ID channel privat (misal <code className="text-slate-600">-100xxxxxxxxxx</code>).
+                Opsional. Dapat dikosongkan jika broadcast ditargetkan per kontak (kontak yang sudah klik <code className="text-slate-600">/start</code> bot). Jika ingin broadcast ke grup/channel publik, gunakan <code className="text-slate-600">@nama_channel</code> atau ID channel privat (<code className="text-slate-600">-100xxxxxxxxxx</code>).
               </p>
             </div>
 
             {/* Bottom Buttons */}
-            <div className="pt-2 flex items-center gap-3">
-              <button
-                type="button"
-                onClick={handleVerifyTelegram}
-                disabled={isTestingTelegram}
-                className="px-5 py-2.5 rounded-xl border border-sky-300 text-sky-600 hover:bg-sky-50/60 text-xs font-semibold transition cursor-pointer active:scale-95 disabled:opacity-60 flex items-center gap-2"
-              >
-                {isTestingTelegram ? (
-                  <>
-                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                    <span>Memeriksa Bot...</span>
-                  </>
-                ) : (
-                  <span>Verifikasi & test</span>
-                )}
-              </button>
+            <div className="pt-2 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <button
+                  type="submit"
+                  disabled={isSavingTelegram}
+                  className="px-6 py-2.5 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-white text-xs font-semibold shadow-xs transition cursor-pointer active:scale-95 disabled:opacity-60 flex items-center gap-2"
+                >
+                  {isSavingTelegram && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+                  <span>{isSavingTelegram ? "Menghubungkan..." : telegramConnected ? "Simpan Perubahan" : "Hubungkan Bot"}</span>
+                </button>
 
-              <button
-                type="submit"
-                className="px-6 py-2.5 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-white text-xs font-semibold shadow-xs transition cursor-pointer active:scale-95"
-              >
-                Simpan
-              </button>
+                {telegramConnected && (
+                  <button
+                    type="button"
+                    onClick={handleVerifyTelegram}
+                    className="px-5 py-2.5 rounded-xl border border-sky-300 text-sky-600 hover:bg-sky-50/60 text-xs font-semibold transition cursor-pointer active:scale-95 flex items-center gap-2"
+                  >
+                    <Send className="h-3.5 w-3.5" />
+                    <span>Kirim Pesan Tes</span>
+                  </button>
+                )}
+              </div>
+
+              {telegramConnected && (
+                <button
+                  type="button"
+                  onClick={handleDisconnectTelegram}
+                  className="px-4 py-2.5 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 text-xs font-semibold transition cursor-pointer"
+                >
+                  Putuskan Bot
+                </button>
+              )}
             </div>
           </form>
+
+          {/* Section: Daftar Subscriber Otomatis */}
+          {telegramConnected && (
+            <div className="pt-6 border-t border-slate-100 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                    <Users className="h-4 w-4 text-sky-600" />
+                    <span>Subscriber Terdaftar ({tgSubscribers.length} orang)</span>
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Pengguna yang pernah klik <strong>/start</strong> pada bot Anda otomatis tersimpan di sini dan siap menerima siaran.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleSyncTgSubscribers}
+                  disabled={isSyncingTgSubscribers}
+                  className="px-3.5 py-1.5 rounded-xl border border-sky-200 bg-sky-50/70 hover:bg-sky-100 text-sky-700 text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50 active:scale-95 shadow-2xs"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${isSyncingTgSubscribers ? "animate-spin" : ""}`} />
+                  <span>{isSyncingTgSubscribers ? "Sinkronisasi..." : "Sinkronkan Subscriber"}</span>
+                </button>
+              </div>
+
+              {tgSubscribers.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                  {tgSubscribers.map((sub) => (
+                    <div
+                      key={sub.id}
+                      onClick={() => {
+                        setTgCustomChatId(sub.teleChatId);
+                        setShowTgTestModal(true);
+                      }}
+                      className="p-3 rounded-2xl border border-slate-200/80 bg-slate-50/50 hover:bg-sky-50/60 hover:border-sky-300 transition cursor-pointer flex items-center justify-between group shadow-2xs"
+                      title="Klik untuk tes kirim pesan ke kontak ini"
+                    >
+                      <div className="min-w-0 pr-2">
+                        <p className="text-xs font-bold text-slate-800 truncate">{sub.name}</p>
+                        <p className="text-[11px] text-slate-500 font-mono">
+                          {sub.customFields?.telegramUsername || `ID: ${sub.teleChatId}`}
+                        </p>
+                      </div>
+                      <span className="shrink-0 text-[10px] font-bold text-sky-700 bg-sky-100/80 px-2 py-1 rounded-lg group-hover:bg-sky-600 group-hover:text-white transition">
+                        Kirim Tes
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50/40 text-center text-xs text-slate-500">
+                  Belum ada subscriber yang terekam. Buka bot Anda (<strong>{telegramConfig.botUsername || "@BotAnda"}</strong>), klik <strong>/start</strong>, lalu klik tombol <em>Sinkronkan Subscriber</em> di atas.
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -1271,11 +1484,29 @@ export const ChannelsPage: React.FC = () => {
               Kirim Pesan Tes Telegram
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-500">
-              Bot terverifikasi. Kirimkan pesan uji coba ke channel target: {telegramConfig.targetChatId}
+              Bot terhubung. Masukkan tujuan penerima dan pesan uji coba untuk memastikan broadcast Telegram berfungsi.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 pt-2">
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-700">
+                Tujuan Chat ID / User ID / Channel
+              </label>
+              <input
+                type="text"
+                value={tgCustomChatId}
+                onChange={(e) => setTgCustomChatId(e.target.value)}
+                placeholder={telegramConfig.targetChatId || "User ID Telegram Anda (misal 123456789) atau @channel"}
+                className="w-full h-10 px-3.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-sky-500 font-mono"
+              />
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                {telegramConfig.targetChatId
+                  ? `Kosongkan jika ingin mengirim ke target default (${telegramConfig.targetChatId}).`
+                  : "Untuk tes kirim ke akun pribadi: buka bot Anda lalu klik /start, lalu masukkan User ID Telegram Anda (cek ID via @userinfobot)."}
+              </p>
+            </div>
+
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-slate-700">
                 Pesan Siaran
@@ -1292,16 +1523,19 @@ export const ChannelsPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setShowTgTestModal(false)}
-                className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                disabled={isTestingTelegram}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer disabled:opacity-60"
               >
                 Tutup
               </button>
               <button
                 type="button"
                 onClick={handleSendTgTest}
-                className="px-5 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold shadow-xs transition cursor-pointer"
+                disabled={isTestingTelegram}
+                className="px-5 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold shadow-xs transition cursor-pointer active:scale-95 disabled:opacity-60 flex items-center gap-2"
               >
-                Kirim ke Telegram
+                {isTestingTelegram && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+                <span>{isTestingTelegram ? "Mengirim Pesan..." : "Kirim ke Telegram"}</span>
               </button>
             </DialogFooter>
           </div>

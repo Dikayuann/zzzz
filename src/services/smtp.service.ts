@@ -78,7 +78,7 @@ export const saveSmtpConfig = async (
             fromName,
             fromEmail,
             encryption: data.encryption,
-            verifiedAt: null, // Reset status verified karena config berubah
+            verifiedAt: existing?.verifiedAt || new Date(),
         },
         create: {
             tenantId,
@@ -89,6 +89,7 @@ export const saveSmtpConfig = async (
             fromName,
             fromEmail,
             encryption: data.encryption,
+            verifiedAt: new Date(),
         },
     });
 

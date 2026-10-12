@@ -48,7 +48,12 @@ export const connectTelegramBot = async (
     actorUserId: number,
     input: SaveTelegramBotInput
 )=> {
-    const cleanToken = input.botToken.trim();
+    let cleanToken = input.botToken.trim();
+    // Otomatis bersihkan jika user menyertakan prefix "bot" atau tanda kutip
+    if (cleanToken.toLowerCase().startsWith("bot")) {
+        cleanToken = cleanToken.slice(3).trim();
+    }
+    cleanToken = cleanToken.replace(/^["']|["']$/g, "").trim();
 
     // verifikasi token langsung ke API telegram
     let telegramResponse: any;
@@ -180,6 +185,175 @@ export const disconnectTelegramBot = async (tenantId: number, actorUserId: numbe
     return {
         success: true,
         message: "Bot Telegram berhasil diputuskan",
+    };
+};
+
+// 5. Proses Pesan Inbound (User Klik /start atau kirim pesan ke Bot)
+export const processTelegramInboundUpdate = async (
+    tenantId: number,
+    update: any,
+    botToken?: string
+) => {
+    const message = update.message || update.edited_message;
+    if (!message) return null;
+
+    const from = message.from;
+    if (!from || from.is_bot) return null;
+
+    const teleChatId = String(from.id);
+    const fullName = [from.first_name, from.last_name].filter(Boolean).join(" ") || from.username || `User ${from.id}`;
+
+    // Cari atau buat kontak di database
+    const existing = await prisma.contact.findFirst({
+        where: {
+            tenantId,
+            teleChatId,
+        },
+    });
+
+    let contact;
+    if (existing) {
+        contact = await prisma.contact.update({
+            where: { id: existing.id },
+            data: {
+                name: existing.name || fullName,
+                lastInboundAt: new Date(),
+                status: "active",
+            },
+        });
+    } else {
+        contact = await prisma.contact.create({
+            data: {
+                tenantId,
+                name: fullName,
+                teleChatId,
+                customFields: {
+                    telegramUsername: from.username ? `@${from.username}` : null,
+                    languageCode: from.language_code || null,
+                },
+                status: "active",
+                lastInboundAt: new Date(),
+            },
+        });
+
+        // Catat consent otomatis untuk saluran telegram
+        await prisma.consent.upsert({
+            where: {
+                contactId_channel: {
+                    contactId: contact.id,
+                    channel: "telegram",
+                },
+            },
+            update: {
+                status: "opted_in",
+                updatedAt: new Date(),
+            },
+            create: {
+                contactId: contact.id,
+                channel: "telegram",
+                status: "opted_in",
+            },
+        });
+    }
+
+    // Jika pesan adalah /start, kirim balasan sambutan otomatis jika botToken tersedia
+    const text = (message.text || "").trim();
+    if (text.startsWith("/start") && botToken) {
+        try {
+            await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    chat_id: from.id,
+                    text: `Halo ${from.first_name || ""}! 👋\n\nAkun Telegram Anda telah berhasil terhubung dan terdaftar untuk menerima siaran informasi dari Campaign Blast.`,
+                }),
+            });
+        } catch (_) {
+            // Ignore error kirim auto-reply agar tidak memutus proses save
+        }
+    }
+
+    return contact;
+};
+
+// 6. Tarik dan Sinkronkan Subscriber yang klik /start dari Telegram API
+export const syncTelegramSubscribers = async (tenantId: number) => {
+    const bot = await prisma.telegramBot.findUnique({ where: { tenantId } });
+    if (!bot || bot.status !== "connected") {
+        throw new AppError("Bot Telegram belum terhubung", 400);
+    }
+
+    let telegramResponse: any;
+    try {
+        const res = await fetch(`https://api.telegram.org/bot${bot.botToken}/getUpdates`);
+        telegramResponse = await res.json();
+    } catch (err: any) {
+        throw new AppError("Gagal menghubungi server Telegram saat sinkronisasi", 502);
+    }
+
+    if (!telegramResponse.ok) {
+        throw new AppError(`Gagal mengambil update Telegram: ${telegramResponse.description}`, 400);
+    }
+
+    const updates: any[] = telegramResponse.result || [];
+    let syncedCount = 0;
+    let maxUpdateId = 0;
+
+    for (const update of updates) {
+        if (update.update_id > maxUpdateId) {
+            maxUpdateId = update.update_id;
+        }
+        const saved = await processTelegramInboundUpdate(tenantId, update, bot.botToken);
+        if (saved) {
+            syncedCount++;
+        }
+    }
+
+    // Acknowledge update queue agar tidak diproses berulang
+    if (maxUpdateId > 0) {
+        try {
+            await fetch(`https://api.telegram.org/bot${bot.botToken}/getUpdates?offset=${maxUpdateId + 1}`);
+        } catch (_) {}
+    }
+
+    const totalSubscribers = await prisma.contact.count({
+        where: {
+            tenantId,
+            teleChatId: { not: null },
+        },
+    });
+
+    return {
+        success: true,
+        message: `Sinkronisasi berhasil. Memproses ${syncedCount} interaksi baru. Total subscriber terdaftar: ${totalSubscribers}.`,
+        syncedCount,
+        totalSubscribers,
+    };
+};
+
+// 7. Ambil Daftar Subscriber Telegram yang Terdaftar
+export const getTelegramSubscribers = async (tenantId: number) => {
+    const contacts = await prisma.contact.findMany({
+        where: {
+            tenantId,
+            teleChatId: { not: null },
+            status: "active",
+        },
+        select: {
+            id: true,
+            name: true,
+            teleChatId: true,
+            customFields: true,
+            createdAt: true,
+            lastInboundAt: true,
+        },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+    });
+
+    return {
+        total: contacts.length,
+        contacts,
     };
 };
 

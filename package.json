@@ -16,7 +16,9 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "test:contacts": "tsx tests/contacts.test.ts",
+    "test:telegram": "tsx tests/telegram.test.ts"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
