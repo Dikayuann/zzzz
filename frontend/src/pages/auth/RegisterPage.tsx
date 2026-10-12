@@ -90,6 +90,7 @@ export const RegisterPage: React.FC = () => {
         state: {
           email,
           verificationToken: res.data.verificationToken,
+          fromRegister: true,
         },
       });
     } catch (err: any) {

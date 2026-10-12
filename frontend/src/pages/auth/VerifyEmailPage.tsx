@@ -50,11 +50,25 @@ export const VerifyEmailPage: React.FC = () => {
   // Status Verifikasi: 'enter_otp' | 'verified'
   const [isVerified, setIsVerified] = useState<boolean>(false);
 
+  // Flow Step: hasSentOtp false (awal, klik Kirim Kode OTP) | true (OTP terkirim, kotak 6-digit aktif)
+  const [hasSentOtp, setHasSentOtp] = useState<boolean>(() => {
+    return Boolean(sessionStorage.getItem("cb_otp_sent_session"));
+  });
+
   // State 6-digit OTP (Hanya satu-satunya input di halaman ini)
   const [otp, setOtp] = useState<string>("");
   const [isVerifying, setIsVerifying] = useState<boolean>(false);
   const [isResending, setIsResending] = useState<boolean>(false);
-  const [cooldown, setCooldown] = useState<number>(60);
+
+  // Cooldown countdown persisten di sessionStorage (tidak reset saat refresh)
+  const [cooldown, setCooldown] = useState<number>(() => {
+    const savedEndTime = sessionStorage.getItem("cb_otp_cooldown_end");
+    if (savedEndTime) {
+      const remaining = Math.ceil((Number(savedEndTime) - Date.now()) / 1000);
+      return remaining > 0 ? remaining : 0;
+    }
+    return 0;
+  });
 
   // Masking email untuk tampilan privasi & keamanan standar (cth: di***ma@gmail.com)
   const maskEmail = (emailStr: string): string => {
@@ -89,10 +103,18 @@ export const VerifyEmailPage: React.FC = () => {
     return { name: "Buka Aplikasi Email", url: `mailto:${emailStr}` };
   };
 
-  // Cooldown countdown
+  // Cooldown countdown timer
   useEffect(() => {
     if (cooldown > 0) {
-      const timer = setTimeout(() => setCooldown((prev) => prev - 1), 1000);
+      const timer = setTimeout(() => {
+        setCooldown((prev) => {
+          if (prev <= 1) {
+            sessionStorage.removeItem("cb_otp_cooldown_end");
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
       return () => clearTimeout(timer);
     }
   }, [cooldown]);
@@ -107,10 +129,15 @@ export const VerifyEmailPage: React.FC = () => {
 
     setIsVerifying(true);
     try {
-      await api.post("/auth/verify-email", { token: code });
+      await api.post("/auth/verify-email", {
+        token: code,
+        email: email && email !== "you@company.com" ? email : undefined,
+      });
       setIsVerified(true);
       toast.success("Email berhasil diverifikasi! Akun Anda telah aktif.");
       sessionStorage.removeItem("cb_pending_verify_email");
+      sessionStorage.removeItem("cb_otp_sent_session");
+      sessionStorage.removeItem("cb_otp_cooldown_end");
       setTimeout(() => {
         navigate("/login");
       }, 2500);
@@ -121,7 +148,7 @@ export const VerifyEmailPage: React.FC = () => {
     } finally {
       setIsVerifying(false);
     }
-  }, [otp, navigate]);
+  }, [otp, email, navigate]);
 
   // Jika URL memiliki parameter ?token=..., verifikasi otomatis
   useEffect(() => {
@@ -130,8 +157,8 @@ export const VerifyEmailPage: React.FC = () => {
     }
   }, [tokenFromUrl, isVerified, handleVerify]);
 
-  // Kirim ulang kode OTP
-  const handleResend = async () => {
+  // Kirim / Kirim ulang kode OTP
+  const handleSendOtp = async () => {
     if (!email || email === "you@company.com") {
       toast.error("Alamat email tidak valid");
       return;
@@ -140,21 +167,28 @@ export const VerifyEmailPage: React.FC = () => {
     setIsResending(true);
     try {
       const res = await api.post("/auth/resend-verification", { email });
-      toast.success("Kode verifikasi baru telah dikirimkan ke email Anda.");
-      
-      if (res.data.verificationToken) {
+      setHasSentOtp(true);
+      sessionStorage.setItem("cb_otp_sent_session", "true");
+
+      const endTime = Date.now() + 60 * 1000;
+      sessionStorage.setItem("cb_otp_cooldown_end", String(endTime));
+      setCooldown(60);
+      setOtp("");
+
+      if (res.data?.verificationToken) {
         setActiveToken(res.data.verificationToken);
       }
 
-      setCooldown(60);
-      setOtp("");
+      toast.success("Kode OTP berhasil dikirim ke email Anda!", {
+        description: "Kode sebelumnya (jika ada) otomatis hangus. Masukkan kode terbaru.",
+      });
     } catch (err: any) {
       if (err.response?.data?.message?.includes("sudah aktif")) {
         toast.info("Akun Anda sudah aktif. Silakan langsung masuk.");
         navigate("/login");
         return;
       }
-      toast.error(err.response?.data?.message || "Gagal mengirim ulang kode OTP");
+      toast.error(err.response?.data?.message || "Gagal mengirim kode OTP");
     } finally {
       setIsResending(false);
     }
@@ -217,13 +251,15 @@ export const VerifyEmailPage: React.FC = () => {
 
             {/* Title */}
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
-              Periksa Email Anda
+              {hasSentOtp ? "Periksa Email Anda" : "Verifikasi Alamat Email"}
             </h1>
 
             {/* Email yang Cukup Dimunculkan Saja (Tidak Perlu Diinput) */}
             <div className="mt-2.5">
               <p className="text-xs sm:text-sm text-slate-600">
-                Kami telah mengirimkan 6 digit kode OTP ke:
+                {hasSentOtp
+                  ? "Kami telah mengirimkan 6 digit kode OTP ke:"
+                  : "Tekan tombol di bawah untuk mengirimkan 6 digit kode OTP ke:"}
               </p>
 
               <div className="mt-2 inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-100/90 border border-slate-200 text-slate-800 text-xs font-semibold font-mono">
@@ -232,8 +268,8 @@ export const VerifyEmailPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Quick Open Email App Shortcut Button */}
-            {emailProvider && (
+            {/* Quick Open Email App Shortcut Button (Hanya tampil setelah OTP dikirim) */}
+            {hasSentOtp && emailProvider && (
               <div className="mt-4">
                 <a
                   href={emailProvider.url}
@@ -247,92 +283,122 @@ export const VerifyEmailPage: React.FC = () => {
               </div>
             )}
 
-            {/* SHADCN UI 6-DIGIT OTP INPUT (OTOMATIS KEDEPAN / AUTO-ADVANCE) */}
-            <div className="my-6 sm:my-8 flex flex-col items-center">
-              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3 block">
-                Masukkan 6 Digit Kode OTP
-              </label>
-
-              <InputOTP
-                maxLength={6}
-                value={otp}
-                autoFocus
-                disabled={isVerifying}
-                onChange={(val) => {
-                  setOtp(val);
-                  // Otomatis verifikasi begitu 6 digit selesai diketik/dipaste
-                  if (val.length === 6) {
-                    handleVerify(val);
-                  }
-                }}
-              >
-                <InputOTPGroup>
-                  <InputOTPSlot index={0} />
-                  <InputOTPSlot index={1} />
-                  <InputOTPSlot index={2} />
-                </InputOTPGroup>
-                <InputOTPSeparator />
-                <InputOTPGroup>
-                  <InputOTPSlot index={3} />
-                  <InputOTPSlot index={4} />
-                  <InputOTPSlot index={5} />
-                </InputOTPGroup>
-              </InputOTP>
-
-              <p className="text-[11px] text-slate-400 mt-2.5">
-                Ketik atau tempel (paste) 6 digit kode dari email Anda
-              </p>
-            </div>
-
-            {/* Tombol Verifikasi Manual */}
-            <div>
-              <Button
-                onClick={() => handleVerify()}
-                disabled={isVerifying || otp.length !== 6}
-                className="w-full h-11 text-xs sm:text-sm font-semibold bg-[#0284c7] hover:bg-[#0369a1] text-white rounded-xl shadow-sm active:scale-[0.98] transition-all disabled:opacity-50"
-              >
-                {isVerifying ? (
-                  <span className="flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin" /> Memverifikasi Kode...
-                  </span>
-                ) : (
-                  "Verifikasi & Lanjutkan"
-                )}
-              </Button>
-            </div>
-
-            {/* Resend OTP dengan Cooldown Timer Standar */}
-            <div className="mt-5 text-xs text-slate-500 flex items-center justify-center gap-1.5">
-              <span>Tidak menerima kode?</span>
-              {cooldown > 0 ? (
-                <span className="text-slate-400 font-medium font-mono">
-                  Kirim ulang dalam {cooldown}s
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleResend}
+            {/* ======================================================== */}
+            {/* TAHAP 1: SEBELUM USER KLIK KIRIM KODE OTP                */}
+            {/* ======================================================== */}
+            {!hasSentOtp ? (
+              <div className="mt-8 space-y-4">
+                <Button
+                  onClick={handleSendOtp}
                   disabled={isResending}
-                  className="font-semibold text-[#0284c7] hover:text-[#0369a1] hover:underline inline-flex items-center gap-1 transition-colors"
+                  className="w-full h-12 text-xs sm:text-sm font-semibold bg-[#0284c7] hover:bg-[#0369a1] text-white rounded-xl shadow-sm active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-2"
                 >
                   {isResending ? (
-                    <span className="inline-flex items-center gap-1">
-                      <Loader2 className="w-3 h-3 animate-spin" /> Mengirim...
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin" /> Mengirimkan Kode OTP...
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1">
-                      <RotateCw className="w-3 h-3" /> Kirim ulang kode
+                    <span className="flex items-center gap-2">
+                      <Mail className="w-4 h-4" /> Kirim Kode OTP
                     </span>
                   )}
-                </button>
-              )}
-            </div>
+                </Button>
+                <p className="text-[11px] text-slate-400 text-center">
+                  Kode 6 digit akan dikirimkan ke email Anda dan berlaku selama 10 menit.
+                </p>
+              </div>
+            ) : (
+              /* ======================================================== */
+              /* TAHAP 2: SETELAH KODE DIKIRIM (INPUT OTP & VERIFIKASI)   */
+              /* ======================================================== */
+              <>
+                {/* SHADCN UI 6-DIGIT OTP INPUT (OTOMATIS KEDEPAN / AUTO-ADVANCE) */}
+                <div className="my-6 sm:my-8 flex flex-col items-center">
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3 block">
+                    Masukkan 6 Digit Kode OTP
+                  </label>
+
+                  <InputOTP
+                    maxLength={6}
+                    value={otp}
+                    autoFocus
+                    disabled={isVerifying}
+                    onChange={(val) => {
+                      setOtp(val);
+                      if (val.length === 6) {
+                        handleVerify(val);
+                      }
+                    }}
+                  >
+                    <InputOTPGroup>
+                      <InputOTPSlot index={0} />
+                      <InputOTPSlot index={1} />
+                      <InputOTPSlot index={2} />
+                    </InputOTPGroup>
+                    <InputOTPSeparator />
+                    <InputOTPGroup>
+                      <InputOTPSlot index={3} />
+                      <InputOTPSlot index={4} />
+                      <InputOTPSlot index={5} />
+                    </InputOTPGroup>
+                  </InputOTP>
+
+                  <p className="text-[11px] text-slate-400 mt-2.5">
+                    Ketik atau tempel (paste) 6 digit kode dari email Anda
+                  </p>
+                </div>
+
+                {/* Tombol Verifikasi Manual */}
+                <div>
+                  <Button
+                    onClick={() => handleVerify()}
+                    disabled={isVerifying || otp.length !== 6}
+                    className="w-full h-11 text-xs sm:text-sm font-semibold bg-[#0284c7] hover:bg-[#0369a1] text-white rounded-xl shadow-sm active:scale-[0.98] transition-all disabled:opacity-50 cursor-pointer"
+                  >
+                    {isVerifying ? (
+                      <span className="flex items-center gap-2">
+                        <Loader2 className="w-4 h-4 animate-spin" /> Memverifikasi Kode...
+                      </span>
+                    ) : (
+                      "Verifikasi & Lanjutkan"
+                    )}
+                  </Button>
+                </div>
+
+                {/* Resend OTP dengan Cooldown Timer Standar */}
+                <div className="mt-5 text-xs text-slate-500 flex items-center justify-center gap-1.5">
+                  <span>Tidak menerima kode?</span>
+                  {cooldown > 0 ? (
+                    <span className="text-slate-400 font-medium font-mono">
+                      Kirim ulang dalam {cooldown}s
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleSendOtp}
+                      disabled={isResending}
+                      className="font-semibold text-[#0284c7] hover:text-[#0369a1] hover:underline inline-flex items-center gap-1 transition-colors cursor-pointer"
+                    >
+                      {isResending ? (
+                        <span className="inline-flex items-center gap-1">
+                          <Loader2 className="w-3 h-3 animate-spin" /> Mengirim...
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1">
+                          <RotateCw className="w-3 h-3" /> Kirim ulang kode
+                        </span>
+                      )}
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
 
             {/* Tips & Spam Folder Note */}
             <div className="mt-5 p-3 rounded-xl bg-slate-50/80 border border-slate-200/70 text-left text-[11px] text-slate-500 leading-relaxed flex items-start gap-2.5">
               <HelpCircle className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
               <span>
-                <strong>Tips:</strong> Kode berlaku selama 30 menit. Jika tidak menemukan email di kotak masuk utama, silakan periksa folder <strong>Spam</strong> atau <strong>Promosi</strong>.
+                <strong>Tips:</strong> Kode berlaku selama 10 menit. Jika tidak menemukan email di kotak masuk utama, silakan periksa folder <strong>Spam</strong> atau <strong>Promosi</strong>.
               </span>
             </div>
 
