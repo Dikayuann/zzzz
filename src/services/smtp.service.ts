@@ -3,6 +3,7 @@ import prisma from "../lib/prisma";
 import { logAudit } from "../lib/audit";
 import { AppError } from "../shared/errors/AppError";
 import { SaveSmtpInput } from "../schemas/smtp.schema";
+import { encrypt, decrypt } from "../lib/encryption";
 
 // Helper untuk membuat transporter Nodemailer berdasarkan konfigurasi
 const createTransporter = (config: {
@@ -18,7 +19,7 @@ const createTransporter = (config: {
         secure: config.encryption === "SSL" || config.port === 465, // true untuk port 465, false untuk lainnya
         auth: {
             user: config.username,
-            pass: config.passwordEncrypted,
+            pass: decrypt(config.passwordEncrypted),
         },
         tls: {
             rejectUnauthorized: false, // fleksibel untuk berbagai mail server
@@ -61,7 +62,7 @@ export const saveSmtpConfig = async (
 
     const existing = await prisma.smtpConfig.findUnique({ where: { tenantId } });
     const passwordEncrypted = data.password && data.password.trim().length > 0
-        ? data.password
+        ? encrypt(data.password.trim())
         : existing?.passwordEncrypted;
 
     if (!passwordEncrypted) {

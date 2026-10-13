@@ -1,6 +1,7 @@
 import nodemailer from "nodemailer";
 import prisma from "./prisma";
 import { AppError } from "../shared/errors/AppError";
+import { decrypt } from "./encryption";
 
 export interface SendEmailOptions {
     tenantId: number;
@@ -27,7 +28,7 @@ export const sendEmail = async (options: SendEmailOptions) => {
         secure: config.encryption === "SSL" || config.port === 465,
         auth: {
             user: config.username,
-            pass: config.passwordEncrypted,
+            pass: decrypt(config.passwordEncrypted),
         },
         tls: {
             rejectUnauthorized: false,
