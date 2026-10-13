@@ -12,6 +12,8 @@ import tagRoutes from "./routes/tag.routes";
 import smtpRoutes from "./routes/smtp.routes";
 import templateRoutes from "./routes/template.routes";
 import telegramRoutes from "./routes/telegram.routes";
+import whatsappQrRoutes from './routes/whatsapp-qr.routes';
+
 
 
 const app = express();
@@ -34,6 +36,7 @@ app.use('/api/v1/templates', templateRoutes);
 app.use('/api/v1/users', userRoutes)
 app.use('/api/v1/settings/smtp', smtpRoutes);
 app.use('/api/v1/channels/telegram', telegramRoutes);
+app.use('/api/v1/channels/whatsapp/qr', whatsappQrRoutes)
 app.use(errorHandler);
 
 

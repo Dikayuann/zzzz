@@ -22,13 +22,15 @@ model Tenant {
   roles     Role[]
   auditLogs AuditLog[]
 
-  contacts      Contact[]
-  lists         List[]
-  tags          Tag[]
-  smtpConfig    smtpConfig?
-  telegramBot   TelegramBot?
-  templates     Template[]
-  telegramBotId Int?
+  contacts               Contact[]
+  lists                  List[]
+  tags                   Tag[]
+  smtpConfig             smtpConfig?
+  telegramBot            TelegramBot?
+  templates              Template[]
+  telegramBotId          Int?
+  whatsappQrSession      WhatsappQrSession?
+  whatsappBusinessConfig WhatsappBusinessConfig?
 
   @@map("tenants")
 }
@@ -326,4 +328,45 @@ model TelegramBot {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@map("telegram_bots")
+}
+
+// Jalur Unofficial WhatsApp Web QR
+model WhatsappQrSession {
+  id                Int       @id @default(autoincrement())
+  tenantId          Int       @unique @map("tenant_id")
+  status            String    @default("disconnected") @db.VarChar(50) // connected, disconnected qr_ready, scanning
+  phoneNumber       String?   @map("phone_number") @db.VarChar(50)
+  pushName          String?   @map("push_name") @db.VarChar(100)
+  qrRaw             String?   @map("qr_raw") @db.Text // base64 QR code
+  connectedAt       DateTime? @map("connected_at")
+  lastActiveAt      DateTime? @map("last_active_at")
+  dailyCount        Int       @default(0) @map("daily_count") // berapa pesan yang sudah terkirim hari ini
+  dailyQuota        Int       @default(300) @map("daily_quota") // batas aman
+  lastMessageSentAt DateTime? @map("last_message_sent_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("whatsapp_qr_sessions")
+}
+
+// WhatsApp Business API 
+model WhatsappBusinessConfig {
+  id                 Int       @id @default(autoincrement())
+  tenantId           Int       @unique @map("tenant_id")
+  phoneNumberId      String    @map("phone_number_id") @db.VarChar(100)
+  wabaId             String    @map("waba_id") @db.VarChar(100)
+  accessToken        String    @map("access_token") @db.VarChar(500)
+  displayPhoneNumber String?   @map("display_phone_number") @db.VarChar(50)
+  messagingTier      String    @default("TIER_1K") @map("messaging_tier") @db.VarChar(50)
+  qualityRating      String    @default("GREEN") @map("quality_rating") @db.VarChar(50)
+  status             String    @default("connected") @db.VarChar(50) // connected, disconnected
+  verifiedAt         DateTime? @map("verified_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("whatsapp_business_configs")
 }
