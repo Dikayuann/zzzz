@@ -70,7 +70,7 @@ export const ChannelsPage: React.FC = () => {
   const [waConnected, setWaConnected] = useState(false);
   const [isTestingWa, setIsTestingWa] = useState(false);
   const [showWaTestModal, setShowWaTestModal] = useState(false);
-  const [waTestRecipient, setWaTestRecipient] = useState("+62 812-3456-7890");
+  const [waTestRecipient, setWaTestRecipient] = useState("");
 
   const [metaConfig, setMetaConfig] = useState<MetaWaConfig>(() => {
     const saved = localStorage.getItem("channel_meta_wa");
@@ -82,16 +82,22 @@ export const ChannelsPage: React.FC = () => {
       }
     }
     return {
-      phoneNumberId: "123456789012345",
-      accessToken: "EAAxxxxxxxxxxx...",
-      wabaId: "987654321098765",
+      phoneNumberId: "",
+      accessToken: "",
+      wabaId: "",
     };
   });
 
   // QR Code WA Web session states
-  const [qrCountdown, setQrCountdown] = useState(25);
   const [isQrConnected, setIsQrConnected] = useState(false);
-  const [isScanningQr, setIsScanningQr] = useState(false);
+  const [qrStatus, setQrStatus] = useState<string>("disconnected");
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [qrPhoneNumber, setQrPhoneNumber] = useState<string | null>(null);
+  const [qrPushName, setQrPushName] = useState<string | null>(null);
+  const [qrDailyCount, setQrDailyCount] = useState<number>(0);
+  const [qrDailyQuota, setQrDailyQuota] = useState<number>(300);
+  const [isInitializingQr, setIsInitializingQr] = useState(false);
+
 
   // Email states
   const [smtpConnected, setSmtpConnected] = useState(false);
@@ -228,15 +234,41 @@ export const ChannelsPage: React.FC = () => {
     fetchSmtp();
   }, []);
 
-  // Auto-refresh countdown for QR Code
+  // Retrieve Baileys WhatsApp QR status from the backend
+  const fetchWhatsappQrStatus = async () => {
+    try {
+      const res = await api.get("/channels/whatsapp/qr/status");
+      const data = res.data?.data;
+      if (data) {
+        setQrStatus(data.status);
+        setIsQrConnected(data.status === "connected");
+        setQrPhoneNumber(data.phoneNumber);
+        setQrPushName(data.pushName);
+        setQrDataUrl(data.qrDataUrl);
+        setQrDailyCount(data.dailyCount || 0);
+        setQrDailyQuota(data.dailyQuota || 300);
+      }
+    } catch (err: any) {
+      console.error("Gagal mengambil status WhatsApp QR:", err);
+    }
+  };
+
+  // Periodically poll the status while on the QR Code tab if not yet connected.
   useEffect(() => {
-    if (activeTab === "whatsapp" && waSubTab === "qrcode" && !isQrConnected) {
-      const timer = setInterval(() => {
-        setQrCountdown((prev) => (prev <= 1 ? 30 : prev - 1));
-      }, 1000);
-      return () => clearInterval(timer);
+    if (activeTab === "whatsapp" && waSubTab === "qrcode") {
+      fetchWhatsappQrStatus();
+
+      // check every 3 second whether the phone has scanned a QR code or if there is a new QR code.
+      if (!isQrConnected) {
+        const interval = setInterval(() => {
+          fetchWhatsappQrStatus();
+        },3000);
+        return () => clearInterval(interval)
+      }
     }
   }, [activeTab, waSubTab, isQrConnected]);
+
+
 
   // Handle Preset Email Switch
   const handleSelectSmtpPreset = (preset: SmtpConfig["preset"]) => {
@@ -319,35 +351,71 @@ export const ChannelsPage: React.FC = () => {
     }, 1200);
   };
 
-  const handleSendWaTest = () => {
-    toast.promise(
-      new Promise((resolve) => setTimeout(resolve, 1500)),
-      {
-        loading: `Mengirim pesan uji coba ke ${waTestRecipient}...`,
-        success: () => {
-          setShowWaTestModal(false);
-          return `Pesan template WhatsApp berhasil terkirim ke ${waTestRecipient} (Status: Delivered)`;
-        },
-        error: "Gagal mengirim pesan uji coba",
+  const handleSendWaTest = async () => {
+    if (!waTestRecipient.trim()) {
+      toast.error("Nomor penerima WhatsApp wajib diisi!");
+      return;
+    }
+
+    if (waSubTab === "qrcode" || isQrConnected) {
+      setIsTestingWa(true);
+      try {
+        const res = await api.post("/channels/whatsapp/qr/test", {
+          recipientPhone: waTestRecipient.trim(),
+          message: "Halo! Ini adalah pesan verifikasi uji coba dari sistem Campaign Blast API. WhatsApp Web Baileys Anda telah terhubung aktif.",
+        });
+        setShowWaTestModal(false);
+        toast.success(res.data?.message || `Pesan WhatsApp berhasil dikirim ke ${waTestRecipient}!`);
+        await fetchWhatsappQrStatus();
+      } catch (err: any) {
+        toast.error(err.response?.data?.message || "Gagal mengirim pesan uji coba WhatsApp");
+      } finally {
+        setIsTestingWa(false);
       }
-    );
+    } else {
+      toast.promise(
+        new Promise((resolve) => setTimeout(resolve, 1500)),
+        {
+          loading: `Mengirim pesan uji coba ke ${waTestRecipient}...`,
+          success: () => {
+            setShowWaTestModal(false);
+            return `Pesan template WhatsApp berhasil terkirim ke ${waTestRecipient} (Status: Delivered)`;
+          },
+          error: "Gagal mengirim pesan uji coba",
+        }
+      );
+    }
   };
 
-  const handleSimulateQrScan = () => {
-    setIsScanningQr(true);
-    setTimeout(() => {
-      setIsScanningQr(false);
-      setIsQrConnected(true);
-      setWaConnected(true);
-      toast.success("Perangkat WhatsApp Web Berhasil Dihubungkan!", {
-        description: "Terhubung ke nomor +62 812-3456-7890 (Samsung Galaxy S24). Multi-Device sesi aktif.",
-      });
-    }, 1800);
+ // Initialize the Baileys session and request the actual QR code from the backend.
+  const handleInitQrSession = async () => {
+    setIsInitializingQr(true);
+
+    try {
+      await api.post("/channels/whatsapp/qr/init");
+      toast.success("Memulai sesi WhatsApp Web, memuat QR Code...");
+      await fetchWhatsappQrStatus();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Gagal menginisialisasi sesi WhatsApp");
+    } finally {
+      setIsInitializingQr(false);
+    }
   };
 
-  const handleDisconnectQr = () => {
-    setIsQrConnected(false);
-    toast.info("Sesi WhatsApp Web telah diputuskan.");
+  // disconnect whatsapp web (logout)
+  const handleDisconnectQr = async () => {
+    try {
+      await api.delete("/channels/whatsapp/qr");
+      setIsQrConnected(false);
+      setQrDataUrl(null);
+      setQrPhoneNumber(null);
+      setQrPushName(null);
+      setQrStatus("disconnected");
+      toast.info("Sesi WhatsApp Web telah diputuskan");
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Gagal memutuskan sesi WhatsApp");
+
+    }
   };
 
   // 2. Email Actions
@@ -432,6 +500,30 @@ export const ChannelsPage: React.FC = () => {
       });
     } finally {
       setIsTestingSmtp(false);
+    }
+  };
+
+  const handleDisconnectSmtp = async () => {
+    if (!confirm("Apakah Anda yakin ingin memutuskan dan menghapus konfigurasi server SMTP Email ini?")) return;
+
+    try {
+      await api.delete("/settings/smtp");
+      setSmtpConnected(false);
+      setSmtpConfig({
+        preset: "custom",
+        host: "",
+        port: "587",
+        encryption: "TLS",
+        username: "",
+        password: "",
+        fromName: "",
+        fromEmail: "",
+        replyTo: "",
+        hasPassword: false,
+      });
+      toast.success("Konfigurasi SMTP Email berhasil diputuskan");
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Gagal memutuskan konfigurasi SMTP");
     }
   };
 
@@ -536,10 +628,10 @@ export const ChannelsPage: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in-50 duration-200 max-w-5xl">
+    <div className="space-y-6 animate-in fade-in-50 duration-200 max-w-4xl mx-auto w-full">
       {/* 1. TOP HEADER */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+        <h1 className="text-xl font-bold tracking-tight text-slate-900">
           Channel Settings
         </h1>
         <p className="text-xs text-slate-500 mt-1">
@@ -548,23 +640,23 @@ export const ChannelsPage: React.FC = () => {
       </div>
 
       {/* 2. CHANNEL NAVIGATION TABS */}
-      <div className="inline-flex items-center gap-1.5 p-1.5 rounded-2xl bg-slate-100/70 border border-slate-200/80 shadow-2xs">
+      <div className="flex flex-wrap sm:inline-flex items-center gap-1 p-1 rounded-xl bg-slate-100/80 border border-slate-200/80 w-full sm:w-auto">
         {/* Email Tab */}
         <button
           type="button"
           onClick={() => setActiveTab("email")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer ${
+          className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
             activeTab === "email"
-              ? "bg-white text-slate-900 shadow-xs border border-slate-200/80"
+              ? "bg-white text-slate-900 shadow-2xs border border-slate-200/60"
               : "text-slate-500 hover:text-slate-900"
           }`}
         >
-          <Mail className="h-4 w-4" />
+          <Mail className="h-3.5 w-3.5" />
           <span>Email</span>
           {smtpConnected || smtpConfig.hasPassword ? (
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
           ) : (
-            <span className="h-2 w-2 rounded-full bg-slate-300" />
+            <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />
           )}
         </button>
 
@@ -572,18 +664,18 @@ export const ChannelsPage: React.FC = () => {
         <button
           type="button"
           onClick={() => setActiveTab("telegram")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer ${
+          className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
             activeTab === "telegram"
-              ? "bg-white text-slate-900 shadow-xs border border-slate-200/80"
+              ? "bg-white text-slate-900 shadow-2xs border border-slate-200/60"
               : "text-slate-500 hover:text-slate-900"
           }`}
         >
-          <Send className="h-4 w-4" />
+          <Send className="h-3.5 w-3.5" />
           <span>Telegram</span>
           {telegramConnected ? (
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
           ) : (
-            <span className="h-2 w-2 rounded-full bg-slate-300" />
+            <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />
           )}
         </button>
 
@@ -591,17 +683,17 @@ export const ChannelsPage: React.FC = () => {
         <button
           type="button"
           onClick={() => setActiveTab("whatsapp")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer ${
+          className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
             activeTab === "whatsapp"
-              ? "bg-white text-slate-900 shadow-xs border border-slate-200/80"
+              ? "bg-white text-slate-900 shadow-2xs border border-slate-200/60"
               : "text-slate-500 hover:text-slate-900"
           }`}
         >
-          <MessageSquare className="h-4 w-4" />
+          <MessageSquare className="h-3.5 w-3.5" />
           <span>WhatsApp</span>
           <span
-            className={`h-2 w-2 rounded-full ${
-              waConnected ? "bg-emerald-500" : "bg-amber-400"
+            className={`h-1.5 w-1.5 rounded-full ${
+              waConnected || isQrConnected ? "bg-emerald-500" : "bg-slate-300"
             }`}
           />
         </button>
@@ -609,13 +701,13 @@ export const ChannelsPage: React.FC = () => {
 
       {/* 3. ACTIVE CHANNEL CARD */}
 
-      {/* TAB A: WHATSAPP (EXACT MATCH TO USER SCREENSHOT) */}
+      {/* TAB A: WHATSAPP */}
       {activeTab === "whatsapp" && (
-        <div className="rounded-3xl border border-slate-200/90 bg-white p-6 sm:p-8 shadow-xs space-y-6">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 sm:p-6 shadow-2xs space-y-6">
           {/* Header Row */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3.5">
-              <div className="h-11 w-11 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100 shadow-2xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-5 border-b border-slate-100">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100 shrink-0">
                 <MessageSquare className="h-5 w-5" />
               </div>
               <div>
@@ -623,34 +715,40 @@ export const ChannelsPage: React.FC = () => {
                   WhatsApp Business
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Kirim campaign via WhatsApp Business API.
+                  Kirim campaign via WhatsApp Business API atau WhatsApp Web.
                 </p>
               </div>
             </div>
 
             {/* Status Pill */}
             <div
-              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${
-                waConnected
+              className={`self-start sm:self-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border transition-all ${
+                (waSubTab === "meta" ? waConnected : isQrConnected)
                   ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                  : "bg-amber-50 text-amber-700 border-amber-200"
+                  : "bg-slate-50 text-slate-500 border-slate-200"
               }`}
             >
               <span
-                className={`h-2 w-2 rounded-full ${
-                  waConnected ? "bg-emerald-500" : "bg-amber-500"
+                className={`h-1.5 w-1.5 rounded-full ${
+                  (waSubTab === "meta" ? waConnected : isQrConnected)
+                    ? "bg-emerald-500"
+                    : "bg-slate-400"
                 }`}
               />
-              <span>{waConnected ? "Terhubung" : "Belum terhubung"}</span>
+              <span>
+                {(waSubTab === "meta" ? waConnected : isQrConnected)
+                  ? "Terhubung"
+                  : "Belum terhubung"}
+              </span>
             </div>
           </div>
 
-          {/* Sub-tab switcher: Business API (Meta) vs Via QR Code (WA Web) */}
-          <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-slate-100/80 border border-slate-200/60">
+          {/* Sub-tab switcher */}
+          <div className="flex flex-wrap sm:inline-flex items-center gap-1 p-1 rounded-xl bg-slate-100/80 border border-slate-200/60 w-full sm:w-auto">
             <button
               type="button"
               onClick={() => setWaSubTab("meta")}
-              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+              className={`flex-1 sm:flex-initial text-center px-3.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
                 waSubTab === "meta"
                   ? "bg-white text-slate-900 shadow-2xs font-bold"
                   : "text-slate-600 hover:text-slate-900"
@@ -661,7 +759,7 @@ export const ChannelsPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setWaSubTab("qrcode")}
-              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+              className={`flex-1 sm:flex-initial text-center px-3.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
                 waSubTab === "qrcode"
                   ? "bg-white text-slate-900 shadow-2xs font-bold"
                   : "text-slate-600 hover:text-slate-900"
@@ -673,21 +771,19 @@ export const ChannelsPage: React.FC = () => {
 
           {/* SUB-VIEW 1: BUSINESS API (META) */}
           {waSubTab === "meta" && (
-            <form onSubmit={handleSaveMetaWa} className="space-y-5">
-              {/* Green Help Box */}
-              <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200/90 text-xs text-emerald-900 leading-relaxed">
-                <span>Cara mendapatkan kredensial: Buka </span>
+            <form onSubmit={handleSaveMetaWa} className="space-y-4 pt-1">
+              {/* Help Box */}
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs text-slate-600 leading-relaxed">
+                <span>Dapatkan kredensial di </span>
                 <a
                   href="https://developers.facebook.com/apps/"
                   target="_blank"
                   rel="noreferrer"
-                  className="font-bold underline text-emerald-700 hover:text-emerald-900 inline-flex items-center gap-1"
+                  className="font-bold underline text-slate-900 hover:text-sky-600 inline-flex items-center gap-1"
                 >
                   Meta for Developers <ExternalLink className="h-3 w-3" />
                 </a>
-                <span>
-                  , buat WhatsApp Business App, lalu salin Phone Number ID, Access Token, dan Business Account ID dari dashboard-nya.
-                </span>
+                <span>, lalu salin Phone Number ID, Access Token, dan Business Account ID ke formulir berikut.</span>
               </div>
 
               {/* Field 1: PHONE NUMBER ID */}
@@ -702,7 +798,7 @@ export const ChannelsPage: React.FC = () => {
                     setMetaConfig({ ...metaConfig, phoneNumberId: e.target.value })
                   }
                   placeholder="123456789012345"
-                  className="w-full h-11 px-4 rounded-xl border border-slate-200/90 bg-slate-50/40 focus:bg-white text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-sky-500 transition shadow-2xs"
+                  className="w-full h-10 px-3.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-sky-500 font-mono transition"
                 />
               </div>
 
@@ -718,10 +814,10 @@ export const ChannelsPage: React.FC = () => {
                     setMetaConfig({ ...metaConfig, accessToken: e.target.value })
                   }
                   placeholder="EAAxxxxxxxxxxx..."
-                  className="w-full h-11 px-4 rounded-xl border border-slate-200/90 bg-slate-50/40 focus:bg-white text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-sky-500 transition shadow-2xs font-mono"
+                  className="w-full h-10 px-3.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-sky-500 font-mono transition"
                 />
-                <p className="text-xs text-slate-400 mt-1">
-                  Token permanen (bukan temporary) dari System User di Meta Business Manager.
+                <p className="text-[11px] text-slate-400">
+                  Gunakan token permanen dari System User Meta Business Manager.
                 </p>
               </div>
 
@@ -737,17 +833,17 @@ export const ChannelsPage: React.FC = () => {
                     setMetaConfig({ ...metaConfig, wabaId: e.target.value })
                   }
                   placeholder="987654321098765"
-                  className="w-full h-11 px-4 rounded-xl border border-slate-200/90 bg-slate-50/40 focus:bg-white text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-sky-500 transition shadow-2xs"
+                  className="w-full h-10 px-3.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-sky-500 font-mono transition"
                 />
               </div>
 
-              {/* Bottom Buttons */}
+              {/* Buttons */}
               <div className="pt-2 flex items-center gap-3">
                 <button
                   type="button"
                   onClick={handleVerifyMetaWa}
                   disabled={isTestingWa}
-                  className="px-5 py-2.5 rounded-xl border border-sky-300 text-sky-600 hover:bg-sky-50/60 text-xs font-semibold transition cursor-pointer active:scale-95 disabled:opacity-60 flex items-center gap-2"
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold transition cursor-pointer active:scale-95 disabled:opacity-60 flex items-center gap-2"
                 >
                   {isTestingWa ? (
                     <>
@@ -761,7 +857,7 @@ export const ChannelsPage: React.FC = () => {
 
                 <button
                   type="submit"
-                  className="px-6 py-2.5 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-white text-xs font-semibold shadow-xs transition cursor-pointer active:scale-95"
+                  className="px-5 py-2 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-white text-xs font-semibold shadow-xs transition cursor-pointer active:scale-95"
                 >
                   Simpan
                 </button>
@@ -771,128 +867,142 @@ export const ChannelsPage: React.FC = () => {
 
           {/* SUB-VIEW 2: VIA QR CODE (WA WEB GATEWAY) */}
           {waSubTab === "qrcode" && (
-            <div className="space-y-6 pt-2">
+            <div className="space-y-5 pt-1">
               {!isQrConnected ? (
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-center bg-slate-50/60 p-6 rounded-2xl border border-slate-100">
-                  {/* Left: Authentic QR Code Interface */}
-                  <div className="md:col-span-5 flex flex-col items-center justify-center p-4 bg-white rounded-2xl border border-slate-200/90 shadow-sm relative">
-                    <div className="relative p-3 bg-white rounded-xl">
-                      {/* Simulated authentic WhatsApp pairing QR */}
-                      <div className="h-52 w-52 bg-slate-900 rounded-lg flex items-center justify-center p-2 relative overflow-hidden">
-                        <div className="grid grid-cols-6 grid-rows-6 gap-1 w-full h-full p-2 bg-white rounded">
-                          {Array.from({ length: 36 }).map((_, i) => (
-                            <div
-                              key={i}
-                              className={`rounded-xs ${
-                                (i % 7 === 0 || i % 5 === 0 || i === 0 || i === 5 || i === 30 || i === 35)
-                                  ? "bg-slate-900"
-                                  : (i % 3 === 0 ? "bg-slate-800" : "bg-transparent")
-                              }`}
-                            />
-                          ))}
-                        </div>
-                        {/* Center WhatsApp icon overlay */}
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                          <div className="h-10 w-10 rounded-full bg-emerald-500 border-2 border-white flex items-center justify-center text-white shadow-md">
-                            <MessageSquare className="h-5 w-5 fill-current" />
-                          </div>
-                        </div>
+                /* Unconnected: Clean QR Pairing Layout */
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center p-5 rounded-2xl bg-slate-50/70 border border-slate-200/70">
+                  {/* Left: QR Code */}
+                  <div className="md:col-span-5 flex flex-col items-center justify-center p-4 bg-white rounded-xl border border-slate-200/80 shadow-2xs">
+                    {qrDataUrl ? (
+                      <img
+                        src={qrDataUrl}
+                        alt="WhatsApp QR Code"
+                        className="h-48 w-48 object-contain rounded-lg border border-slate-100"
+                      />
+                    ) : (
+                      <div className="h-48 w-48 rounded-lg bg-slate-50 border border-dashed border-slate-200 flex flex-col items-center justify-center p-4 text-center">
+                        {isInitializingQr ? (
+                          <>
+                            <RefreshCw className="h-7 w-7 text-emerald-600 animate-spin mb-2" />
+                            <p className="text-xs text-slate-500 font-medium">
+                              Memuat QR Code...
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <Smartphone className="h-7 w-7 text-slate-400 mb-2" />
+                            <p className="text-xs text-slate-500">
+                              Klik tombol di bawah untuk memuat QR Code
+                            </p>
+                          </>
+                        )}
                       </div>
-                    </div>
+                    )}
 
-                    <div className="flex items-center gap-2 mt-3 text-xs text-slate-500">
-                      <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
-                      <span>Kode QR diperbarui dalam <strong>{qrCountdown}s</strong></span>
-                    </div>
+                    {qrDataUrl && qrStatus === "qr_ready" && (
+                      <div className="flex items-center gap-1.5 mt-2.5 text-xs text-emerald-700">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <span>QR Code aktif • Siap dipindai</span>
+                      </div>
+                    )}
 
                     <button
                       type="button"
-                      onClick={handleSimulateQrScan}
-                      disabled={isScanningQr}
-                      className="mt-4 w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs transition cursor-pointer shadow-xs flex items-center justify-center gap-2"
+                      onClick={handleInitQrSession}
+                      disabled={isInitializingQr}
+                      className="mt-3 w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs transition cursor-pointer shadow-xs flex items-center justify-center gap-2 disabled:opacity-60"
                     >
-                      {isScanningQr ? (
-                        <>
-                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                          <span>Menghubungkan ke WhatsApp...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Smartphone className="h-3.5 w-3.5" />
-                          <span>Simulasi Scan Ponsel (Pairing)</span>
-                        </>
-                      )}
+                      <RefreshCw className={`h-3.5 w-3.5 ${isInitializingQr ? "animate-spin" : ""}`} />
+                      <span>{qrDataUrl ? "Perbarui QR Code" : "Muat QR Code"}</span>
                     </button>
                   </div>
 
-                  {/* Right: Step-by-step pairing guide */}
-                  <div className="md:col-span-7 space-y-4">
+                  {/* Right: Steps */}
+                  <div className="md:col-span-7 space-y-3">
                     <h3 className="text-sm font-bold text-slate-900">
-                      Cara Menghubungkan WhatsApp Web:
+                      Cara Menghubungkan:
                     </h3>
-                    <ol className="space-y-3 text-xs text-slate-600 leading-relaxed list-decimal list-inside">
-                      <li>
-                        Buka aplikasi <strong>WhatsApp</strong> di ponsel cerdas Anda.
-                      </li>
-                      <li>
-                        Ketuk <strong>Menu ⋮</strong> (di Android) atau <strong>Pengaturan ⚙️</strong> (di iPhone).
-                      </li>
-                      <li>
-                        Pilih menu <strong>Perangkat Tertaut</strong>, lalu ketuk tombol <strong>Tautkan Perangkat</strong>.
-                      </li>
-                      <li>
-                        Arahkan kamera ponsel Anda ke kode QR di samping untuk memindai.
-                      </li>
+                    <ol className="space-y-2 text-xs text-slate-600 leading-relaxed list-decimal list-inside">
+                      <li>Buka aplikasi <strong>WhatsApp</strong> di ponsel Anda.</li>
+                      <li>Ketuk <strong>Menu ⋮</strong> (Android) atau <strong>Pengaturan ⚙️</strong> (iPhone).</li>
+                      <li>Pilih <strong>Perangkat Tertaut</strong>, lalu ketuk <strong>Tautkan Perangkat</strong>.</li>
+                      <li>Arahkan kamera ke QR Code di samping.</li>
                     </ol>
 
-                    <div className="p-3.5 rounded-xl bg-sky-50 text-sky-800 border border-sky-100 text-xs flex items-start gap-2.5">
-                      <ShieldCheck className="h-4 w-4 text-sky-600 flex-shrink-0 mt-0.5" />
-                      <div>
-                        <strong className="block font-semibold">Perlindungan Anti-Banned</strong>
-                        <span>Sistem otomatis menggunakan antrean pintar (delay 2-5 detik acak) agar nomor tetap aman saat blast.</span>
-                      </div>
+                    <div className="p-3 rounded-xl bg-white border border-slate-200/80 text-xs text-slate-500 flex items-start gap-2.5">
+                      <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                      <span>Proteksi pengiriman aman dan kuota harian otomatis aktif setelah terhubung.</span>
                     </div>
                   </div>
                 </div>
               ) : (
-                /* Connected QR Session Card */
-                <div className="p-6 rounded-2xl bg-emerald-50/40 border border-emerald-200/90 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
-                        <CheckCircle2 className="h-6 w-6" />
+                /* Connected QR: Clean, Compact, Minimalist */
+                <div className="space-y-4">
+                  {/* Connected Device Row */}
+                  <div className="p-4 rounded-xl border border-slate-200/80 bg-slate-50/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3.5">
+                      <div className="h-11 w-11 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-base shrink-0 shadow-2xs">
+                        {qrPushName ? qrPushName.charAt(0).toUpperCase() : "W"}
                       </div>
                       <div>
-                        <h4 className="text-sm font-bold text-slate-900">
-                          Perangkat WhatsApp Terhubung (Multi-Device)
-                        </h4>
-                        <p className="text-xs text-emerald-700">
-                          Nomor: +62 812-3456-7890 • Samsung Galaxy S24 (Android 14)
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-bold text-slate-900">
+                            {qrPushName || "WhatsApp User"}
+                          </h4>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            Terhubung
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 font-mono mt-0.5">
+                          {qrPhoneNumber
+                            ? `+${qrPhoneNumber.replace(/(\d{2})(\d{3})(\d{4})(\d+)/, "$1 $2-$3-$4")}`
+                            : "+62 812-XXXX-XXXX"}
                         </p>
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={handleDisconnectQr}
-                      className="px-4 py-2 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold transition cursor-pointer"
-                    >
-                      Putuskan Sesi
-                    </button>
+                    {/* Action Buttons */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowWaTestModal(true)}
+                        className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition cursor-pointer flex items-center gap-1.5 active:scale-95"
+                      >
+                        <Send className="h-3.5 w-3.5" />
+                        <span>Kirim Pesan Uji Coba</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleDisconnectQr}
+                        className="px-3.5 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 text-xs font-semibold transition cursor-pointer active:scale-95"
+                      >
+                        Putuskan
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 text-xs">
-                    <div className="p-3 rounded-xl bg-white border border-slate-200">
-                      <span className="text-slate-400 block text-[11px]">Sinyal & Baterai</span>
-                      <span className="font-bold text-slate-800 mt-0.5 block">📶 Online • 🔋 88%</span>
+                  {/* Quota & Safeguard Row */}
+                  <div className="p-4 rounded-xl border border-slate-200/80 bg-white space-y-2.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-slate-700">Kapasitas Blast Hari Ini</span>
+                      <span className="font-mono text-slate-900 font-bold">
+                        {qrDailyCount} / {qrDailyQuota} pesan
+                      </span>
                     </div>
-                    <div className="p-3 rounded-xl bg-white border border-slate-200">
-                      <span className="text-slate-400 block text-[11px]">Kecepatan Throttle</span>
-                      <span className="font-bold text-slate-800 mt-0.5 block">1 pesan / 3.2 detik</span>
+
+                    <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
+                      <div
+                        className="h-full bg-emerald-500 rounded-full transition-all duration-300"
+                        style={{
+                          width: `${Math.min(100, Math.max(2, (qrDailyCount / (qrDailyQuota || 300)) * 100))}%`,
+                        }}
+                      />
                     </div>
-                    <div className="p-3 rounded-xl bg-white border border-slate-200">
-                      <span className="text-slate-400 block text-[11px]">Kapasitas Harian</span>
-                      <span className="font-bold text-emerald-600 mt-0.5 block">Siap kirim s/d 2.500 kontak</span>
+
+                    <div className="flex items-center justify-between text-[11px] text-slate-400">
+                      <span>Sisa {Math.max(0, qrDailyQuota - qrDailyCount)} pesan untuk hari ini</span>
+                      <span>Reset otomatis 00:00 WIB</span>
                     </div>
                   </div>
                 </div>
@@ -904,42 +1014,42 @@ export const ChannelsPage: React.FC = () => {
 
       {/* TAB B: EMAIL — SMTP & PROVIDERS */}
       {activeTab === "email" && (
-        <div className="rounded-3xl border border-slate-200/90 bg-white p-6 sm:p-8 shadow-xs space-y-6">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 sm:p-6 shadow-2xs space-y-6">
           {/* Header Row */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3.5">
-              <div className="h-11 w-11 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shadow-2xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-5 border-b border-slate-100">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shrink-0">
                 <Mail className="h-5 w-5" />
               </div>
               <div>
                 <h2 className="text-base font-bold text-slate-900">
-                  Email — SMTP & Cloud Providers
+                  Email — SMTP Server
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Konfigurasi server SMTP atau layanan cloud mail untuk pengiriman email campaign.
+                  Konfigurasi server SMTP untuk pengiriman email broadcast.
                 </p>
               </div>
             </div>
 
             {/* Status Pill */}
             <div
-              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold border transition-all ${
+              className={`self-start sm:self-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border transition-all ${
                 smtpConnected || smtpConfig.hasPassword
-                  ? "bg-emerald-50 text-emerald-700 border-emerald-300 shadow-2xs"
-                  : "bg-slate-100 text-slate-500 border-slate-200"
+                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                  : "bg-slate-50 text-slate-500 border-slate-200"
               }`}
             >
               <span
-                className={`h-2.5 w-2.5 rounded-full ${
+                className={`h-1.5 w-1.5 rounded-full ${
                   smtpConnected || smtpConfig.hasPassword
-                    ? "bg-emerald-500 ring-2 ring-emerald-200 animate-pulse"
+                    ? "bg-emerald-500"
                     : "bg-slate-400"
                 }`}
               />
               <span>
                 {smtpConnected || smtpConfig.hasPassword
                   ? "Terhubung"
-                  : "Belum Dikonfigurasi"}
+                  : "Belum terhubung"}
               </span>
             </div>
           </div>
@@ -1115,24 +1225,36 @@ export const ChannelsPage: React.FC = () => {
             </div>
 
             {/* Bottom Buttons */}
-            <div className="pt-2 flex items-center gap-3">
-              <button
-                type="button"
-                onClick={handleVerifySmtp}
-                disabled={isTestingSmtp || isSavingSmtp || isLoadingSmtp}
-                className="px-5 py-2.5 rounded-xl border border-sky-300 text-sky-600 hover:bg-sky-50/60 text-xs font-semibold transition cursor-pointer active:scale-95 disabled:opacity-60 flex items-center gap-2"
-              >
-                <span>Verifikasi & test</span>
-              </button>
+            <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={handleVerifySmtp}
+                  disabled={isTestingSmtp || isSavingSmtp || isLoadingSmtp}
+                  className="w-full sm:w-auto justify-center px-4 py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold transition cursor-pointer active:scale-95 disabled:opacity-60 flex items-center gap-2"
+                >
+                  <span>Verifikasi & test</span>
+                </button>
 
-              <button
-                type="submit"
-                disabled={isSavingSmtp || isLoadingSmtp}
-                className="px-6 py-2.5 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-white text-xs font-semibold shadow-xs transition cursor-pointer active:scale-95 disabled:opacity-60 flex items-center gap-2"
-              >
-                {isSavingSmtp && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
-                <span>{isSavingSmtp ? "Menyimpan..." : "Simpan"}</span>
-              </button>
+                <button
+                  type="submit"
+                  disabled={isSavingSmtp || isLoadingSmtp}
+                  className="w-full sm:w-auto justify-center px-5 py-2 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-white text-xs font-semibold shadow-xs transition cursor-pointer active:scale-95 disabled:opacity-60 flex items-center gap-2"
+                >
+                  {isSavingSmtp && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+                  <span>{isSavingSmtp ? "Menyimpan..." : "Simpan"}</span>
+                </button>
+              </div>
+
+              {(smtpConnected || smtpConfig.hasPassword) && (
+                <button
+                  type="button"
+                  onClick={handleDisconnectSmtp}
+                  className="w-full sm:w-auto justify-center px-3.5 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 text-xs font-semibold transition cursor-pointer active:scale-95"
+                >
+                  Putuskan SMTP
+                </button>
+              )}
             </div>
           </form>
         </div>
@@ -1140,11 +1262,11 @@ export const ChannelsPage: React.FC = () => {
 
       {/* TAB C: TELEGRAM BOT */}
       {activeTab === "telegram" && (
-        <div className="rounded-3xl border border-slate-200/90 bg-white p-6 sm:p-8 shadow-xs space-y-6">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 sm:p-6 shadow-2xs space-y-6">
           {/* Header Row */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3.5">
-              <div className="h-11 w-11 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center border border-sky-100 shadow-2xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-5 border-b border-slate-100">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center border border-sky-100 shrink-0">
                 <Send className="h-5 w-5" />
               </div>
               <div>
@@ -1159,12 +1281,12 @@ export const ChannelsPage: React.FC = () => {
 
             {/* Status Pill */}
             <div
-              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${
+              className={`self-start sm:self-auto inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-all ${
                 isLoadingTelegram
                   ? "bg-slate-50 text-slate-600 border-slate-200"
                   : telegramConnected
                   ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                  : "bg-amber-50 text-amber-700 border-amber-200"
+                  : "bg-slate-100 text-slate-500 border-slate-200"
               }`}
             >
               {isLoadingTelegram ? (
@@ -1172,7 +1294,7 @@ export const ChannelsPage: React.FC = () => {
               ) : (
                 <span
                   className={`h-2 w-2 rounded-full ${
-                    telegramConnected ? "bg-emerald-500" : "bg-amber-500"
+                    telegramConnected ? "bg-emerald-500" : "bg-slate-400"
                   }`}
                 />
               )}
@@ -1275,12 +1397,12 @@ export const ChannelsPage: React.FC = () => {
             </div>
 
             {/* Bottom Buttons */}
-            <div className="pt-2 flex items-center justify-between">
-              <div className="flex items-center gap-3">
+            <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full sm:w-auto">
                 <button
                   type="submit"
                   disabled={isSavingTelegram}
-                  className="px-6 py-2.5 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-white text-xs font-semibold shadow-xs transition cursor-pointer active:scale-95 disabled:opacity-60 flex items-center gap-2"
+                  className="w-full sm:w-auto justify-center px-6 py-2.5 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-white text-xs font-semibold shadow-xs transition cursor-pointer active:scale-95 disabled:opacity-60 flex items-center gap-2"
                 >
                   {isSavingTelegram && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
                   <span>{isSavingTelegram ? "Menghubungkan..." : telegramConnected ? "Simpan Perubahan" : "Hubungkan Bot"}</span>
@@ -1290,7 +1412,7 @@ export const ChannelsPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleVerifyTelegram}
-                    className="px-5 py-2.5 rounded-xl border border-sky-300 text-sky-600 hover:bg-sky-50/60 text-xs font-semibold transition cursor-pointer active:scale-95 flex items-center gap-2"
+                    className="w-full sm:w-auto justify-center px-5 py-2.5 rounded-xl border border-sky-300 text-sky-600 hover:bg-sky-50/60 text-xs font-semibold transition cursor-pointer active:scale-95 flex items-center gap-2"
                   >
                     <Send className="h-3.5 w-3.5" />
                     <span>Kirim Pesan Tes</span>
@@ -1302,7 +1424,7 @@ export const ChannelsPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleDisconnectTelegram}
-                  className="px-4 py-2.5 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 text-xs font-semibold transition cursor-pointer"
+                  className="w-full sm:w-auto justify-center px-4 py-2.5 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 text-xs font-semibold transition cursor-pointer"
                 >
                   Putuskan Bot
                 </button>
@@ -1313,7 +1435,7 @@ export const ChannelsPage: React.FC = () => {
           {/* Section: Daftar Subscriber Otomatis */}
           {telegramConnected && (
             <div className="pt-6 border-t border-slate-100 space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
                     <Users className="h-4 w-4 text-sky-600" />
@@ -1328,7 +1450,7 @@ export const ChannelsPage: React.FC = () => {
                   type="button"
                   onClick={handleSyncTgSubscribers}
                   disabled={isSyncingTgSubscribers}
-                  className="px-3.5 py-1.5 rounded-xl border border-sky-200 bg-sky-50/70 hover:bg-sky-100 text-sky-700 text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50 active:scale-95 shadow-2xs"
+                  className="w-full sm:w-auto justify-center px-3.5 py-1.5 rounded-xl border border-sky-200 bg-sky-50/70 hover:bg-sky-100 text-sky-700 text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50 active:scale-95 shadow-2xs"
                 >
                   <RefreshCw className={`h-3.5 w-3.5 ${isSyncingTgSubscribers ? "animate-spin" : ""}`} />
                   <span>{isSyncingTgSubscribers ? "Sinkronisasi..." : "Sinkronkan Subscriber"}</span>
@@ -1380,7 +1502,7 @@ export const ChannelsPage: React.FC = () => {
               Kirim Pesan Uji Coba WhatsApp
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-500">
-              Koneksi Meta Cloud API berhasil. Kirimkan pesan uji coba ke nomor Anda untuk memastikan penerimaan template.
+              Kirimkan pesan uji coba ke nomor Anda untuk memastikan koneksi gateway WhatsApp aktif dan pesan terkirim.
             </DialogDescription>
           </DialogHeader>
 
@@ -1393,32 +1515,37 @@ export const ChannelsPage: React.FC = () => {
                 type="tel"
                 value={waTestRecipient}
                 onChange={(e) => setWaTestRecipient(e.target.value)}
-                placeholder="+62 812-3456-7890"
-                className="w-full h-10 px-3.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-sky-500"
+                placeholder="Contoh: 08123456789 atau 628123456789"
+                className="w-full h-10 px-3.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-sky-500 font-mono"
               />
-            </div>
-
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs text-slate-600 space-y-1">
-              <p className="font-semibold text-slate-800">Isi template yang akan dikirim:</p>
-              <p className="italic text-slate-500">
-                "Halo! Ini adalah pesan verifikasi dari sistem Campaign Blast API. Koneksi akun WhatsApp Business Anda telah aktif sempurna."
+              <p className="text-[11px] text-slate-400">
+                Gunakan format nomor lokal (08...) atau internasional (62...).
               </p>
             </div>
 
-            <DialogFooter className="pt-2 gap-2">
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs text-slate-600 space-y-1">
+              <p className="font-semibold text-slate-800">Isi pesan uji coba yang akan dikirim:</p>
+              <p className="italic text-slate-500">
+                "Halo! Ini adalah pesan verifikasi uji coba dari sistem Campaign Blast API. WhatsApp Web Baileys Anda telah terhubung aktif."
+              </p>
+            </div>
+
+            <DialogFooter className="pt-2 gap-2 flex-col-reverse sm:flex-row">
               <button
                 type="button"
                 onClick={() => setShowWaTestModal(false)}
-                className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                className="w-full sm:w-auto px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
               >
                 Tutup
               </button>
               <button
                 type="button"
                 onClick={handleSendWaTest}
-                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition cursor-pointer"
+                disabled={isTestingWa}
+                className="w-full sm:w-auto px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition cursor-pointer flex items-center justify-center gap-2 disabled:opacity-60"
               >
-                Kirim Sekarang
+                {isTestingWa && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+                <span>{isTestingWa ? "Mengirim..." : "Kirim Sekarang"}</span>
               </button>
             </DialogFooter>
           </div>
@@ -1452,12 +1579,12 @@ export const ChannelsPage: React.FC = () => {
               />
             </div>
 
-            <DialogFooter className="pt-2 gap-2">
+            <DialogFooter className="pt-2 gap-2 flex-col-reverse sm:flex-row">
               <button
                 type="button"
                 onClick={() => setShowEmailTestModal(false)}
                 disabled={isTestingSmtp}
-                className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer disabled:opacity-60"
+                className="w-full sm:w-auto px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer disabled:opacity-60"
               >
                 Tutup
               </button>
@@ -1465,7 +1592,7 @@ export const ChannelsPage: React.FC = () => {
                 type="button"
                 onClick={handleSendEmailTest}
                 disabled={isTestingSmtp}
-                className="px-5 py-2 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-white text-xs font-semibold shadow-xs transition cursor-pointer active:scale-95 disabled:opacity-60 flex items-center gap-2"
+                className="w-full sm:w-auto px-5 py-2 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-white text-xs font-semibold shadow-xs transition cursor-pointer active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2"
               >
                 {isTestingSmtp && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
                 <span>{isTestingSmtp ? "Mengirim Email..." : "Kirim Email Tes"}</span>
@@ -1519,12 +1646,12 @@ export const ChannelsPage: React.FC = () => {
               />
             </div>
 
-            <DialogFooter className="pt-2 gap-2">
+            <DialogFooter className="pt-2 gap-2 flex-col-reverse sm:flex-row">
               <button
                 type="button"
                 onClick={() => setShowTgTestModal(false)}
                 disabled={isTestingTelegram}
-                className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer disabled:opacity-60"
+                className="w-full sm:w-auto px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer disabled:opacity-60"
               >
                 Tutup
               </button>
@@ -1532,7 +1659,7 @@ export const ChannelsPage: React.FC = () => {
                 type="button"
                 onClick={handleSendTgTest}
                 disabled={isTestingTelegram}
-                className="px-5 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold shadow-xs transition cursor-pointer active:scale-95 disabled:opacity-60 flex items-center gap-2"
+                className="w-full sm:w-auto px-5 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold shadow-xs transition cursor-pointer active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2"
               >
                 {isTestingTelegram && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
                 <span>{isTestingTelegram ? "Mengirim Pesan..." : "Kirim ke Telegram"}</span>
