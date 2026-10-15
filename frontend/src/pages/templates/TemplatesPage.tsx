@@ -61,6 +61,8 @@ export const TemplatesPage: React.FC = () => {
     activeTarget,
     setActiveTarget,
     insertTagRef,
+    mediaUrl,
+    setMediaUrl,
     // Actions
     handleChannelChange,
     handleSelectPreset,
@@ -180,6 +182,8 @@ export const TemplatesPage: React.FC = () => {
             onInstagramUrlChange={setInstagramUrl}
             whatsappUrl={whatsappUrl}
             onWhatsappUrlChange={setWhatsappUrl}
+            mediaUrl={mediaUrl}
+            onMediaUrlChange={setMediaUrl}
           />
         </div>
 
@@ -211,6 +215,7 @@ export const TemplatesPage: React.FC = () => {
             instagramUrl={instagramUrl}
             whatsappUrl={whatsappUrl}
             footerAddress={footerAddress}
+            mediaUrl={mediaUrl}
           />
         </div>
       </div>
@@ -238,13 +243,17 @@ export const TemplatesPage: React.FC = () => {
         showTargetSelector={channel === "email"}
       />
 
-      {/* 5. TEST SEND EMAIL MODAL */}
+      {/* 5. TEST SEND MODAL (EMAIL, WHATSAPP, TELEGRAM) */}
       <TestSendModal
         open={isTestSendModalOpen}
         onOpenChange={setIsTestSendModalOpen}
+        channel={channel}
         templateId={templateId}
         subject={subject}
         compiledHtml={compiledHtml}
+        contentWhatsapp={content}
+        contentTelegram={content}
+        mediaUrl={mediaUrl}
         activeRecipient={recipient}
       />
     </div>

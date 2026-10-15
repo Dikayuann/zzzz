@@ -22,6 +22,8 @@ import {
   SlidersHorizontal,
   Link2,
   ArrowUpDown,
+  Upload,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -75,6 +77,8 @@ interface TemplateEditorPanelProps {
   onInstagramUrlChange?: (val: string) => void;
   whatsappUrl?: string;
   onWhatsappUrlChange?: (val: string) => void;
+  mediaUrl?: string;
+  onMediaUrlChange?: (val: string) => void;
 }
 
 const QUICK_MERGE_TAGS = [
@@ -127,6 +131,8 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
   onInstagramUrlChange,
   whatsappUrl = "https://wa.me/6281234567890",
   onWhatsappUrlChange,
+  mediaUrl = "",
+  onMediaUrlChange,
 }) => {
   // Input references for smart cursor tag insertion
   const subjectInputRef = useRef<HTMLInputElement>(null);
@@ -962,6 +968,119 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
         handleInsertSubjectTag={handleInsertSubjectTag}
         handleInsertPreheaderTag={handleInsertPreheaderTag}
       />
+
+      {/* BANNER / IMAGE ATTACHMENT FOR WHATSAPP & TELEGRAM */}
+      {(channel === "whatsapp" || channel === "telegram") && (
+          <div className="p-4 bg-white rounded-2xl border border-slate-200/90 shadow-2xs space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div
+                    className={`p-2 rounded-xl ${
+                        channel === "whatsapp"
+                            ? "bg-emerald-50 text-emerald-600 border border-emerald-100"
+                            : "bg-sky-50 text-sky-600 border border-sky-100"
+                    }`}
+                >
+                  <ImageIcon className="h-4 w-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <span>Banner Gambar Promosi</span>
+                    <span className="text-[10px] font-normal text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full">
+                    Opsional
+                  </span>
+                  </h4>
+                  <p className="text-[11px] text-slate-500">
+                    Gambar akan dikirim sebagai banner utama, dan teks pesan di bawah menjadi keterangan (caption).
+                  </p>
+                </div>
+              </div>
+
+              {mediaUrl && (
+                  <button
+                      type="button"
+                      onClick={() => onMediaUrlChange?.("")}
+                      className="text-[11px] text-rose-500 hover:text-rose-700 font-medium hover:underline cursor-pointer flex items-center gap-1"
+                  >
+                    <X className="h-3 w-3" />
+                    <span>Hapus</span>
+                  </button>
+              )}
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center gap-2">
+              {/* Input Link / URL Gambar */}
+              <div className="relative flex-1 w-full">
+                <Link2 className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                <input
+                    type="url"
+                    value={mediaUrl || ""}
+                    onChange={(e) => onMediaUrlChange?.(e.target.value)}
+                    placeholder="Tempel link URL gambar (misal: https://...)"
+                    className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-400 font-mono transition"
+                />
+              </div>
+
+              {/* Tombol Upload File dari Komputer */}
+              <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+                <span className="text-[11px] text-slate-400 font-medium hidden sm:inline">atau</span>
+                <label className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer border border-slate-200 transition shrink-0 active:scale-95 w-full sm:w-auto">
+                  <Upload className="h-3.5 w-3.5 text-slate-600" />
+                  <span>Pilih Gambar</span>
+                  <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          if (file.size > 5 * 1024 * 1024) {
+                            toast.error("Ukuran gambar maksimal 5MB");
+                            return;
+                          }
+                          const reader = new FileReader();
+                          reader.onload = (event) => {
+                            const result = event.target?.result as string;
+                            if (result) {
+                              onMediaUrlChange?.(result);
+                              toast.success(`Gambar "${file.name}" siap dilampirkan!`);
+                            }
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/* Mini Thumbnail Preview */}
+            {mediaUrl && (
+                <div className="flex items-center gap-2.5 pt-1">
+                  <div className="h-16 w-28 rounded-xl overflow-hidden border border-slate-200 bg-slate-50 shrink-0">
+                    <img
+                        src={mediaUrl}
+                        alt="Thumbnail"
+                        className="h-full w-full object-cover"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src =
+                              "https://placehold.co/200x120?text=Gambar+Tidak+Valid";
+                        }}
+                    />
+                  </div>
+                  <div className="text-[11px] text-slate-600">
+                    <p className="font-semibold text-emerald-700 flex items-center gap-1">
+                      ✓ Gambar Terpasang
+                    </p>
+                    <p className="text-[10px] text-slate-400">
+                      Banner siap dikirim bersama teks pesan template.
+                    </p>
+                  </div>
+                </div>
+            )}
+          </div>
+      )}
+
 
       {/* 2. RICH EDITOR CONTAINER WITH DUAL MODE */}
       <div className="rounded-2xl border border-slate-200/90 bg-white shadow-2xs overflow-hidden flex flex-col focus-within:border-slate-400 transition">

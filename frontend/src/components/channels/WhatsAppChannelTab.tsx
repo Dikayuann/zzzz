@@ -128,6 +128,7 @@ export const WhatsAppChannelTab: React.FC<WhatsAppChannelTabProps> = ({ onStatus
   };
 
   const handleSendWaTest = async () => {
+    if (isTestingWa) return;
     if (!waTestRecipient.trim()) {
       toast.error("Nomor penerima WhatsApp wajib diisi!");
       return;

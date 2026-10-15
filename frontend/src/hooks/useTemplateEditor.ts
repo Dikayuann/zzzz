@@ -27,6 +27,7 @@ export function useTemplateEditor() {
   const [emailContent, setEmailContent] = useState("");
   const [whatsappContent, setWhatsappContent] = useState(DEFAULT_WA_CONTENT);
   const [telegramContent, setTelegramContent] = useState(DEFAULT_TELEGRAM_CONTENT);
+  const [mediaUrl, setMediaUrl] = useState("");
   const [recipient, setRecipient] = useState<RecipientPreview>(SAMPLE_RECIPIENTS[0]);
 
   // Active channel content accessor
@@ -133,6 +134,7 @@ export function useTemplateEditor() {
         if (parsed.instagramUrl) setInstagramUrl(parsed.instagramUrl);
         if (parsed.whatsappUrl) setWhatsappUrl(parsed.whatsappUrl);
         if (parsed.footerAddress) setFooterAddress(parsed.footerAddress);
+        if (parsed.mediaUrl) setMediaUrl(parsed.mediaUrl);
         if (parsed.templateId) setTemplateId(parsed.templateId);
       }
     } catch (err) {
@@ -168,6 +170,7 @@ export function useTemplateEditor() {
           instagramUrl,
           whatsappUrl,
           footerAddress,
+          mediaUrl,
         };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
       } catch {
@@ -260,6 +263,7 @@ export function useTemplateEditor() {
         if (json.enableSocial !== undefined) setEnableSocial(json.enableSocial);
         if (json.websiteUrl) setWebsiteUrl(json.websiteUrl);
         if (json.instagramUrl) setInstagramUrl(json.instagramUrl);
+        if (json.mediaUrl) setMediaUrl(json.mediaUrl);
         if (json.whatsappUrl) setWhatsappUrl(json.whatsappUrl);
         if (json.footerAddress) setFooterAddress(json.footerAddress);
       }
@@ -279,6 +283,7 @@ export function useTemplateEditor() {
       setEnableLogo(false);
       setLogoUrl("");
       setEnableCta(false);
+      setMediaUrl("");
       setEnableSocial(false);
     } else if (channel === "whatsapp") {
       setWhatsappContent(DEFAULT_WA_CONTENT);
@@ -319,6 +324,7 @@ export function useTemplateEditor() {
           instagramUrl,
           whatsappUrl,
           footerAddress,
+          mediaUrl,
         },
       };
 
@@ -448,6 +454,9 @@ export function useTemplateEditor() {
     activeTarget,
     setActiveTarget,
     insertTagRef,
+    mediaUrl,
+    setMediaUrl,
+
     // Actions
     handleChannelChange,
     handleSelectPreset,

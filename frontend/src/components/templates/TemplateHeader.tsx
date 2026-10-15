@@ -136,15 +136,27 @@ export const TemplateHeader: React.FC<TemplateHeaderProps> = ({
             <span>Merge tags</span>
           </button>
 
-          {/* Send Test Email Button (Only on Email Channel) */}
-          {channel === "email" && onOpenTestSend && (
+          {/* Send Test Button (Active on all channels: Email, WhatsApp, Telegram) */}
+          {onOpenTestSend && (
             <button
               type="button"
               onClick={onOpenTestSend}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50/80 hover:bg-indigo-100 text-xs font-semibold text-indigo-700 shadow-2xs transition cursor-pointer active:scale-95 whitespace-nowrap"
-              title="Kirim email uji coba ke inbox Anda"
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border text-xs font-semibold shadow-2xs transition cursor-pointer active:scale-95 whitespace-nowrap ${
+                channel === "whatsapp"
+                  ? "border-emerald-200 bg-emerald-50/90 hover:bg-emerald-100 text-emerald-700"
+                  : channel === "telegram"
+                  ? "border-sky-200 bg-sky-50/90 hover:bg-sky-100 text-sky-700"
+                  : "border-indigo-200 bg-indigo-50/90 hover:bg-indigo-100 text-indigo-700"
+              }`}
+              title={`Kirim ${channel === "whatsapp" ? "WhatsApp" : channel === "telegram" ? "Telegram" : "email"} uji coba`}
             >
-              <Send className="h-3.5 w-3.5 text-indigo-600" />
+              <Send className={`h-3.5 w-3.5 ${
+                channel === "whatsapp"
+                  ? "text-emerald-600"
+                  : channel === "telegram"
+                  ? "text-sky-600"
+                  : "text-indigo-600"
+              }`} />
               <span>Kirim Uji Coba</span>
             </button>
           )}

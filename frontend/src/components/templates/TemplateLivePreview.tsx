@@ -63,6 +63,7 @@ interface TemplateLivePreviewProps {
   instagramUrl?: string;
   whatsappUrl?: string;
   footerAddress?: string;
+  mediaUrl?: string;
 }
 
 export const TemplateLivePreview: React.FC<TemplateLivePreviewProps> = ({
@@ -88,6 +89,7 @@ export const TemplateLivePreview: React.FC<TemplateLivePreviewProps> = ({
   instagramUrl = "https://instagram.com/acmecorp",
   whatsappUrl = "https://wa.me/6281234567890",
   footerAddress = "PT Acme Digital Nusantara, Jakarta, Indonesia",
+  mediaUrl = "",
 }) => {
   const [deviceView, setDeviceView] = useState<"desktop" | "mobile">("desktop");
   const [previewMode, setPreviewMode] = useState<"visual" | "html">("visual");
@@ -566,9 +568,23 @@ export const TemplateLivePreview: React.FC<TemplateLivePreviewProps> = ({
           {/* WhatsApp Chat Body */}
           <div className="p-4 sm:p-6 min-h-[360px] flex flex-col justify-end space-y-2">
             <div className="max-w-[85%] bg-white rounded-2xl rounded-tl-none p-3 shadow-2xs self-start border border-slate-200/40 space-y-2">
-              <div className="text-xs text-slate-800 leading-relaxed font-sans">
-                {renderWhatsAppLines(content)}
-              </div>
+            {/* Banner Gambar WhatsApp */}
+            {mediaUrl && (
+                <div className="rounded-xl overflow-hidden border border-slate-100 max-h-56 bg-slate-100">
+                  <img
+                      src={mediaUrl}
+                      alt="WhatsApp Banner"
+                      className="w-full h-auto object-cover max-h-56"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src =
+                            "https://placehold.co/400x200?text=Gambar+Tidak+Valid";
+                      }}
+                  />
+                </div>
+            )}
+            <div className="text-xs text-slate-800 leading-relaxed font-sans">
+              {renderWhatsAppLines(content)}
+            </div>
               <div className="flex items-center justify-end gap-1 text-[10px] text-slate-400 pt-1">
                 <span>10:30</span>
                 <CheckCheck className="h-3.5 w-3.5 text-sky-500" />
@@ -597,6 +613,20 @@ export const TemplateLivePreview: React.FC<TemplateLivePreviewProps> = ({
           {/* Telegram Body */}
           <div className="p-4 sm:p-6 min-h-[360px] flex flex-col justify-end space-y-2">
             <div className="max-w-[85%] bg-white rounded-2xl p-3 shadow-2xs self-start border border-slate-200/40 space-y-2">
+              {/* Banner Gambar Telegram */}
+              {mediaUrl && (
+                <div className="rounded-xl overflow-hidden border border-slate-100 max-h-56 bg-slate-100">
+                  <img
+                    src={mediaUrl}
+                    alt="Telegram Banner"
+                    className="w-full h-auto object-cover max-h-56"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src =
+                        "https://placehold.co/400x200?text=Gambar+Tidak+Valid";
+                    }}
+                  />
+                </div>
+              )}
               <div className="text-xs text-slate-800 leading-relaxed whitespace-pre-wrap">
                 {interpolateMergeTags(content || "(Pesan Telegram masih kosong...)", recipient, orgName)}
               </div>
