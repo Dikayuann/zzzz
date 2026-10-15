@@ -125,7 +125,7 @@ export const connectTelegramBot = async (
 // Kirim Pesan Uji Coba ke Chat / Channel Telegram
 export const sendTestTelegramMessage = async (
     tenantId: number,
-    input: TestTelegramMessageInput
+    input: TestTelegramMessageInput & { mediaUrl?: string }
 )=> {
     const bot = await prisma.telegramBot.findUnique({
         where: {tenantId},
@@ -137,14 +137,25 @@ export const sendTestTelegramMessage = async (
 
     let telegramResponse: any;
     try {
-        const res = await fetch(`https://api.telegram.org/bot${bot.botToken}/sendMessage`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
+        const isPhoto = Boolean(input.mediaUrl && input.mediaUrl.trim());
+        const endpoint = isPhoto ? `https://api.telegram.org/bot${bot.botToken}/sendPhoto` : `https://api.telegram.org/bot${bot.botToken}/sendMessage`;
+
+        const requestBody = isPhoto ? {
+            chat_id: input.chatId.trim(),
+            photo: input.mediaUrl!.trim(),
+            caption: input.message,
+            parse_mode: input.parseMode || "HTML",
+        }
+        : {
                 chat_id: input.chatId.trim(),
                 text: input.message,
-                parse_mode: input.parseMode || "HTML",
-            }),
+                parse_mode: input.parseMode || "HTML"
+        };
+
+        const res = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(requestBody),
         });
         telegramResponse = await res.json();
     } catch (err: any) {

@@ -13,6 +13,7 @@ import smtpRoutes from "./routes/smtp.routes";
 import templateRoutes from "./routes/template.routes";
 import telegramRoutes from "./routes/telegram.routes";
 import whatsappQrRoutes from './routes/whatsapp-qr.routes';
+import { restoreActiveWhatsappSessions } from "./services/whatsapp-qr.service";
 
 
 
@@ -45,4 +46,6 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`🚀 Server berjalan di http://localhost:${PORT}`);
     console.log(`📑 Dokumentasi Swagger: http://localhost:${PORT}/api-docs`);
+    // Memulihkan sesi WhatsApp Web yang sudah tersambung
+    restoreActiveWhatsappSessions();
 });

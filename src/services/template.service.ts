@@ -9,7 +9,12 @@ import {
     PreviewTemplateInput,
     TestSendTemplateInput,
 } from "../schemas/template.schema";
+import { sendWhatsappQrMessage } from "./whatsapp-qr.service";
+import { sendTestTelegramMessage } from "./telegram.service";
+
 import {sendEmail} from "../lib/mailer";
+
+const testSendCooldowns = new Map<string, number>();
 
 export const getTemplates = async (tenantId: number) => {
     const templates = await prisma.template.findMany({
@@ -229,8 +234,20 @@ export const testSendTemplate = async (
     templateId: number | null,
     data: TestSendTemplateInput) => {
 
+    const channel = data.channel || "email";
+    const cooldownKey = `${tenantId}_${channel}`;
+    const lastSentAt = testSendCooldowns.get(cooldownKey) || 0;
+    const now = Date.now();
+    if(now - lastSentAt < 6000){
+        const sisaDetik = Math.ceil((6000 - (now - lastSentAt)) / 1000);
+         throw new AppError(`Pengiriman uji coba terlalu cepat. Mohon tunggu ${sisaDetik} detik lagi.`, 429);
+    }
+     testSendCooldowns.set(cooldownKey, now); 
+    const orgName = data.orgName || "Campaign Blast";
     let rawSubject = data.subject || "Uji coba Template - Campaign Blast";
     let rawHtml = data.contentHtml || "";
+    let rawWhatsapp = data.contentWhatsapp || "";
+    let rawTelegram = data.contentTelegram || "";
 
     // jika ada templateId ambil template tersimpan dari database
     if (templateId) {
@@ -239,20 +256,20 @@ export const testSendTemplate = async (
         if (!latestVersion) {
             throw new AppError("Template belum memiliki versi konten", 400);
         }
-        if (!data.subject) {
-            rawSubject = latestVersion.subject || rawSubject;
-        }
-        if (!data.contentHtml) {
-            rawHtml = latestVersion.contentHtml || rawHtml;
-        }
+        rawSubject = data.subject || latestVersion.subject || rawSubject;
+        rawHtml = data.contentHtml || latestVersion.contentHtml || rawHtml;
+        rawWhatsapp = data.contentWhatsapp || latestVersion.contentWhatsapp || rawWhatsapp;
+        rawTelegram = data.contentTelegram || latestVersion.contentTelegram || rawTelegram;
     }
 
-    if (!rawHtml.trim()) {
-        throw new AppError("Konten email tidak boleh kosong", 400);
-    }
 
     // Siapkan data kontak untuk merge tags (bisa dari DB atau sampel)
     let contactData: any = data.sampleContact || null;
+    let targetPhone = data.targetPhone || "";
+    let targetChatId = data.targetChatId || "";
+    let targetEmail = data.targetEmail || "";
+
+    // memilih kontak dari db
     if (data.contactId) {
         const foundContact = await prisma.contact.findFirst({
             where: {id: Number(data.contactId), tenantId },
@@ -268,6 +285,9 @@ export const testSendTemplate = async (
                 phone: foundContact.phone || foundContact.whatsappNumber,
                 customFields: foundContact.customFields as Record<string, any>,
             };
+            if (!targetPhone) targetPhone = foundContact.phone || foundContact.whatsappNumber || "";
+            if (!targetChatId) targetChatId = foundContact.teleChatId || "";
+            if (!targetEmail) targetEmail = foundContact.email || "";
         }
     }
 
@@ -275,20 +295,86 @@ export const testSendTemplate = async (
     if (!contactData) {
         const actor = await prisma.user.findUnique({
             where: { id: actorId },
-            select: { name: true },
+            select: { name: true, email: true },
         });
-        const actorName = actor?.name || "Pelanggan";
+        const actorName = actor?.name || "Tester";
         const nameParts = actorName.trim().split(/\s+/);
         contactData = {
             firstName: nameParts[0] || actorName,
             lastName: nameParts.slice(1).join(" ") || "",
             name: actorName,
-            email: data.targetEmail,
-            phone: "+62 812-3456-7890",
+            email: targetEmail || actor?.email || "",
+            phone: targetPhone || "",
         };
     }
 
-    const orgName = data.orgName || "Campaign Blast";
+    // pengiriman berdasarkan channel yang dipilih
+
+    //channel whatsapp
+    if (channel === "whatsapp") {
+        if (!rawWhatsapp.trim()) {
+            throw new AppError("Konten teks WhatsApp tidak boleh kosong", 400);
+        }
+        if (!targetPhone) {
+            throw new AppError("Nomor telepon tujuan WhatsApp wajib diisi", 400);
+        }
+
+
+        const renderedWhatsapp = applyMergeTags(rawWhatsapp, contactData, { orgName });
+        const result = await sendWhatsappQrMessage(tenantId, targetPhone, renderedWhatsapp, data.mediaUrl);
+
+
+        await logAudit({
+            tenantId,
+            actorId,
+            action: "TEST_SEND_TEMPLATE",
+            entityType: "TEMPLATE",
+            entityId: templateId || undefined,
+            details: { channel: "whatsapp", targetPhone, messageId: result.messageId },
+        });
+
+        return {
+            success: true,
+            message: result.message || `Pesan uji coba WhatsApp berhasil dikirim ke ${targetPhone}`, messageId: result.messageId
+        };
+    }
+
+
+    // channel telegram
+    if (channel === "telegram") {
+        if (!rawTelegram.trim()) {
+            throw new AppError("Konten Telegram tidak boleh kosong", 400);
+        }
+        if (!targetChatId) {
+            throw new AppError("Chat ID tujuan Telegram wajib diisi", 400);
+        }
+
+        const renderedTelegram = applyMergeTags(rawTelegram, contactData, { orgName });
+        const result = await sendTestTelegramMessage(tenantId, { chatId: targetChatId, message: renderedTelegram, parseMode: "HTML", mediaUrl: data.mediaUrl });
+
+        await logAudit({
+            tenantId,
+            actorId,
+            action: "TEST_SEND_TEMPLATE",
+            entityType: "TEMPLATE",
+            entityId: templateId || undefined,
+            details: { channel: "telegram", targetChatId, messageId: result.messageId },
+        });
+
+        return {
+            success: true,
+            message: result.message || `Pesan uji coba Telegram berhasil dikirim ke ${targetChatId}`,
+            messageId: result.messageId
+        };
+    }
+
+    // ── CHANNEL EMAIL (DEFAULT) ──
+    if (!rawHtml.trim()) {
+        throw new AppError("Konten email tidak boleh kosong", 400);
+    }
+    if (!targetEmail) {
+        throw new AppError("Email tujuan wajib diisi", 400);
+    }
 
     // render merge tags [ada subject dan isi html
     const renderedSubject = applyMergeTags(rawSubject, contactData,  { orgName });
@@ -298,7 +384,7 @@ export const testSendTemplate = async (
     // kirim email via SMTP
     const sendResult = await sendEmail({
         tenantId,
-        to: data.targetEmail,
+        to: targetEmail,
         subject: renderedSubject,
         html: renderedHtml
     });
@@ -310,16 +396,12 @@ export const testSendTemplate = async (
         action: "TEST_SEND_TEMPLATE",
         entityType: "TEMPLATE",
         entityId: templateId || undefined,
-        details: {
-            targetEmail: data.targetEmail,
-            subject: renderedSubject,
-            messageId: sendResult.messageId,
-        },
+        details: { channel: "email", targetEmail, subject: renderedSubject, messageId: sendResult.messageId },
     });
 
     return {
         success: true,
-        message: `Email uji coba berhasil dikirim ke ${data.targetEmail}`,
+        message: `Email uji coba berhasil dikirim ke ${targetEmail}`,
         messageId: sendResult.messageId,
     };
 };

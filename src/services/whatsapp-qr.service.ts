@@ -10,6 +10,7 @@ import { AppError } from "../shared/errors/AppError";
 
 const activeSockets: Map<number, WASocket> = new Map();
 const activeQrCodes: Map<number, { qrRaw: string; qrDataUrl:string } > = new Map();
+const activeSendingTenants: Set<number> = new Set();
 
 // helper untuk direktori sesi auth
 const getSessionDir = (tenantId: number) => {
@@ -128,14 +129,176 @@ export const initWhatsappQrSession = async (tenantId: number) => {
             }
         }
     });
+
+    // Menangani pesan masuk (Inbound messages & Auto-Opt-Out "Berhenti" / "STOP")
+    sock.ev.on("messages.upsert", async ({ messages, type }) => {
+        if (type !== "notify" || !messages || messages.length === 0) return;
+
+        for (const msg of messages) {
+            // Abaikan jika pesan berasal dari diri sendiri atau broadcast status
+            if (msg.key.fromMe || msg.key.remoteJid === "status@broadcast") continue;
+
+            const remoteJid = msg.key.remoteJid;
+            if (!remoteJid || !remoteJid.endsWith("@s.whatsapp.net")) continue;
+
+            const rawText =
+                msg.message?.conversation ||
+                msg.message?.extendedTextMessage?.text ||
+                "";
+            const text = rawText.trim().toLowerCase();
+            if (!text) continue;
+
+            const rawPhone = remoteJid.split("@")[0] || "";
+            const cleanPhone = rawPhone.replace(/\D/g, "");
+
+            // Cek apakah pesan merupakan permohonan berhenti berlangganan
+            const isUnsubscribe = [
+                "berhenti",
+                "stop",
+                "unsubscribe",
+                "unsub",
+                "batal",
+                "keluar",
+            ].includes(text);
+
+            try {
+                // Cocokkan 9 digit terakhir untuk nomor 08xxx vs 628xxx
+                const last9Digits = cleanPhone.slice(-9);
+                const contact = await prisma.contact.findFirst({
+                    where: {
+                        tenantId,
+                        OR: [
+                            { whatsappNumber: { contains: last9Digits } },
+                            { phone: { contains: last9Digits } },
+                        ],
+                    },
+                });
+
+                if (isUnsubscribe) {
+                    if (contact) {
+                        // 1. Catat status Consent menjadi opted_out
+                        await prisma.consent.upsert({
+                            where: {
+                                contactId_channel: {
+                                    contactId: contact.id,
+                                    channel: "whatsapp",
+                                },
+                            },
+                            update: {
+                                status: "opted_out",
+                                updatedAt: new Date(),
+                            },
+                            create: {
+                                contactId: contact.id,
+                                channel: "whatsapp",
+                                status: "opted_out",
+                            },
+                        });
+
+                        // 2. Perbarui waktu interaksi terakhir
+                        await prisma.contact.update({
+                            where: { id: contact.id },
+                            data: { lastInboundAt: new Date() },
+                        });
+
+                        // 3. Kirim konfirmasi opt-out ramah & resmi
+                        await sock.sendMessage(remoteJid, {
+                            text: `Permintaan Anda berhasil diproses. Nomor Anda telah dinonaktifkan dari daftar pesan promosi kami. Anda tidak akan menerima pesan blast lagi.\n\nKetik *GABUNG* jika ingin berlangganan kembali di kemudian hari.\nTerima kasih.`,
+                        });
+
+                        console.log(`[WA-QR] Auto Opt-Out berhasil untuk ${contact.name} (+${cleanPhone})`);
+                    } else {
+                        await sock.sendMessage(remoteJid, {
+                            text: `Nomor Anda telah dicatat untuk tidak menerima pesan promosi dari kami. Terima kasih.`,
+                        });
+                    }
+                } else if (text === "gabung" || text === "join") {
+                    // Jika pelanggan ingin berlangganan kembali
+                    if (contact) {
+                        await prisma.consent.upsert({
+                            where: {
+                                contactId_channel: {
+                                    contactId: contact.id,
+                                    channel: "whatsapp",
+                                },
+                            },
+                            update: {
+                                status: "opted_in",
+                                updatedAt: new Date(),
+                            },
+                            create: {
+                                contactId: contact.id,
+                                channel: "whatsapp",
+                                status: "opted_in",
+                            },
+                        });
+
+                        await sock.sendMessage(remoteJid, {
+                            text: `Terima kasih! Nomor Anda telah aktif kembali untuk menerima informasi dan penawaran dari kami.`,
+                        });
+                        console.log(`[WA-QR] Re-Opt-In untuk ${contact.name} (+${cleanPhone})`);
+                    }
+                } else if (contact) {
+                    // Update lastInboundAt jika customer membalas pesan biasa
+                    await prisma.contact.update({
+                        where: { id: contact.id },
+                        data: { lastInboundAt: new Date() },
+                    });
+                }
+            } catch (err) {
+                console.error("[WA-QR] Error saat menangani pesan masuk:", err);
+            }
+        }
+    });
+
     return getWhatsappQrStatus(tenantId);
 }
+
+/**
+ * Memeriksa apakah tanggal lastMessageSentAt berbeda dengan hari ini (WIB).
+ * Jika sudah berganti hari (lewat 00:00 WIB), reset dailyCount = 0 di database.
+ */
+const checkAndResetDailyQuota = async (session: { id: number; lastMessageSentAt: Date | null; dailyCount: number }) => {
+    if (!session.lastMessageSentAt || session.dailyCount === 0) {
+        return session.dailyCount;
+    }
+
+    const now = new Date();
+    // Bandingkan tanggal berbasis zona waktu WIB (Asia/Jakarta)
+    const lastDate = session.lastMessageSentAt.toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" });
+    const currentDate = now.toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" });
+
+    if (lastDate !== currentDate) {
+        await prisma.whatsappQrSession.update({
+            where: { id: session.id },
+            data: { dailyCount: 0 },
+        });
+        return 0;
+    }
+
+    return session.dailyCount;
+};
 
 // mengambil status koneksi qr code saat ini
 export const getWhatsappQrStatus = async (tenantId: number) => {
     const sessionDb = await prisma.whatsappQrSession.findUnique({ where: { tenantId } });
 
+    // Auto-reconnect jika status di database 'connected' tapi socket belum aktif di memori
+    if (sessionDb?.status === "connected" && !activeSockets.has(tenantId)) {
+        const sessionDir = getSessionDir(tenantId);
+        if (fs.existsSync(path.join(sessionDir, "creds.json"))) {
+            initWhatsappQrSession(tenantId).catch((err) => {
+                console.error(`[WhatsApp Web] Gagal auto-reconnect tenant #${tenantId}:`, err);
+            });
+        }
+    }
+
     const cachedQr = activeQrCodes.get(tenantId);
+
+    let currentDailyCount = sessionDb?.dailyCount || 0;
+    if (sessionDb) {
+        currentDailyCount = await checkAndResetDailyQuota(sessionDb);
+    }
 
     return {
         status: sessionDb?.status || "disconnected",
@@ -143,7 +306,7 @@ export const getWhatsappQrStatus = async (tenantId: number) => {
         pushName: sessionDb?.pushName || null,
         qrDataUrl: cachedQr?.qrDataUrl || null,
         connectedAt: sessionDb?.connectedAt || null,
-        dailyCount: sessionDb?.dailyCount || 0,
+        dailyCount: currentDailyCount,
         dailyQuota: sessionDb?.dailyQuota || 300,
     };
 };
@@ -177,6 +340,7 @@ export const disconnectWhatsappQrSession = async (tenantId: number) => {
         },
     });
 
+
     return { success: true, message: "Sesi WhatsApp berhasil diputuskan" };
 };
 
@@ -184,21 +348,48 @@ export const disconnectWhatsappQrSession = async (tenantId: number) => {
 export const sendWhatsappQrMessage = async (
     tenantId: number,
     recipientPhone: string,
-    message: string
+    message: string,
+    mediaUrl?: string
 )=> {
-    const sock = activeSockets.get(tenantId);
+
+    // Cegat jika ada pengiriman yang sedang berjalan
+    if (activeSendingTenants.has(tenantId)) {
+        throw new AppError("Pesan WhatsApp sedang dalam proses pengiriman. Mohon tunggu hingga proses selesai.", 429)
+    }
+
+
+    let sock = activeSockets.get(tenantId);
     const sessionDb = await prisma.whatsappQrSession.findUnique({
         where: { tenantId }
     });
+
+
+
+    // Jika socket di memori belum ada tapi kredensial sesi tersimpan di disk, hubungkan otomatis
+    if (!sock && sessionDb?.status === "connected") {
+        const sessionDir = getSessionDir(tenantId);
+        if (fs.existsSync(path.join(sessionDir, "creds.json"))) {
+            await initWhatsappQrSession(tenantId);
+            // tunggu sejenak hingga socket siap terhubung
+            for (let i = 0; i < 5; i++) {
+                sock = activeSockets.get(tenantId);
+                if (sock) break;
+                await new Promise((resolve) => setTimeout(resolve, 1000));
+            }
+        }
+    }
 
     if (!sock || sessionDb?.status !== "connected") {
         throw new AppError("Koneksi WhatsApp belum terhubung. Silahkan scan QR Code terlebih dahulu", 400);
     }
 
+    // Periksa reset kuota harian jika sudah lewat 00:00 WIB
+    const activeDailyCount = await checkAndResetDailyQuota(sessionDb);
+
     // cek kuota pengiriman harian
-    if (sessionDb.dailyCount >= sessionDb.dailyQuota) {
+    if (activeDailyCount >= sessionDb.dailyQuota) {
         throw new AppError(
-            `Batas kuota pengiriman harian (${sessionDb.dailyQuota} pesan) telah tercapai untuk nomor ini`, 429);
+            `Batas kuota pengiriman harian (${sessionDb.dailyQuota} pesan) telah tercapai untuk nomor ini. Kuota akan direset otomatis pukul 00:00 WIB.`, 429);
     }
 
     // format nomor Whatsapp
@@ -209,12 +400,21 @@ export const sendWhatsappQrMessage = async (
     const jid = `${cleanNumber}@s.whatsapp.net`;
 
     try {
+        activeSendingTenants.add(tenantId);
         // Simulasi kehadiran "sedang mengetik..."
         await sock.sendPresenceUpdate("composing", jid);
-        await new Promise((resolve) => setTimeout(resolve, 1500)); // jeda 1.5 detik
+        await new Promise((resolve) => setTimeout(resolve, 2500)); // jeda 2.5 detik
         await sock.sendPresenceUpdate("paused", jid);
         // Kirim pesan teks
-        const sent = await sock.sendMessage(jid, { text: message });
+        let sent:any;
+       if (mediaUrl && mediaUrl.trim()) {
+            sent = await sock.sendMessage(jid, {
+                image: { url: mediaUrl.trim() },
+                caption: message,
+            });
+        } else {
+            sent = await sock.sendMessage(jid, { text: message });
+        }
         // Update counter pengiriman di database
         await prisma.whatsappQrSession.update({
             where: { tenantId },
@@ -231,6 +431,30 @@ export const sendWhatsappQrMessage = async (
         };
     } catch (err: any) {
         throw new AppError(`Gagal mengirim pesan WhatsApp: ${err.message || "Error tidak diketahui"}`, 500);
+    } finally {
+        activeSendingTenants.delete(tenantId);
     }
+};
 
+/**
+ * Memulihkan semua sesi WhatsApp Web yang tersimpan saat server baru dijalankan
+ */
+export const restoreActiveWhatsappSessions = async () => {
+    try {
+        const connectedSessions = await prisma.whatsappQrSession.findMany({
+            where: { status: "connected" },
+        });
+
+        for (const session of connectedSessions) {
+            const sessionDir = getSessionDir(session.tenantId);
+            if (fs.existsSync(path.join(sessionDir, "creds.json"))) {
+                console.log(`[WhatsApp Web] Memulihkan sesi otomatis untuk tenant #${session.tenantId}...`);
+                initWhatsappQrSession(session.tenantId).catch((err) => {
+                    console.error(`[WhatsApp Web] Gagal restore sesi tenant #${session.tenantId}:`, err);
+                });
+            }
+        }
+    } catch (err) {
+        console.error("[WhatsApp Web] Gagal memulihkan sesi saat startup:", err);
+    }
 };

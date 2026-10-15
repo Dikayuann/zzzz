@@ -42,12 +42,33 @@ export const previewTemplateSchema = z.object({
 });
 
 export const testSendTemplateSchema = z.object({
-    targetEmail: z.string().trim().email("Format email tujuan tidak valid"),
+    channel: z.enum(["email", "whatsapp", "telegram"]).default("email"),
+    targetEmail: z.string().trim().email("Format email tujuan tidak valid").optional(),
+    targetPhone: z.string().trim().optional(),
+    targetChatId: z.string().trim().optional(),
     subject: z.string().trim().optional(),
     contentHtml: z.string().optional(),
+    contentWhatsapp: z.string().optional(),
+    contentTelegram: z.string().optional(),
+    mediaUrl: z.string().trim().optional(),
     contactId: z.coerce.number().optional(),
     sampleContact: z.any().optional(),
     orgName: z.string().trim().optional(),
+}).refine((data) => {
+    // validasi berdasarkan channel yang dipilih
+    if (data.channel === "email" && !data.targetEmail) {
+        return false;
+    }
+    if (data.channel === "whatsapp" && !data.targetPhone && !data.contactId) {
+        return false;
+    }
+    if (data.channel === "telegram" && !data.targetChatId && !data.contactId) {
+        return false;
+    }
+    return true;
+}, {
+    message: "Tujuan pengiriman (email / nomor telepon / chat ID) wajib diisi sesuai saluran yang dipilih",
+    path: ["targetEmail"],
 });
 
 
