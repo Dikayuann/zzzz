@@ -129,6 +129,10 @@ export const TelegramChannelTab: React.FC<TelegramChannelTabProps> = ({ onStatus
       }
       setTelegramConnected(true);
       onStatusChange?.(true);
+      // Langsung tarik subscriber dan sinkronkan tanpa perlu refresh
+      fetchTgSubscribers();
+      api.post("/channels/telegram/sync").then(() => fetchTgSubscribers()).catch(() => {});
+
       toast.success("Bot Telegram berhasil terhubung!", {
         description: rawUsername
           ? `${botName ? `${botName} (` : ""}${rawUsername.startsWith("@") ? rawUsername : `@${rawUsername}`}${botName ? ")" : ""} siap digunakan untuk broadcast.`
@@ -143,6 +147,15 @@ export const TelegramChannelTab: React.FC<TelegramChannelTabProps> = ({ onStatus
       setIsSavingTelegram(false);
     }
   };
+
+  // Polling subscriber baru secara otomatis setiap 4 detik saat bot terhubung
+  useEffect(() => {
+    if (!telegramConnected) return;
+    const interval = setInterval(() => {
+      fetchTgSubscribers();
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [telegramConnected]);
 
   const handleVerifyTelegram = () => {
     if (tgSubscribers.length > 0 && !tgCustomChatId) {

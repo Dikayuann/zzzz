@@ -7,7 +7,9 @@ import {
   ArrowRight,
   ArrowLeft,
   RotateCcw,
+  RefreshCw,
 } from "lucide-react";
+import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { MergeTagsModal } from "@/components/campaigns/MergeTagsModal";
 import type {
@@ -54,6 +56,9 @@ export const NewCampaignPage: React.FC = () => {
   const navigate = useNavigate();
   const initialDraft = useMemo(() => getInitialDraft(), []);
 
+  // state untuk melacak proses kirim API
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  
   // Stepper State
   const [currentStep, setCurrentStep] = useState<number>(() => {
     if (initialDraft?.currentStep && initialDraft.currentStep >= 1 && initialDraft.currentStep <= 5) {
@@ -358,24 +363,102 @@ export const NewCampaignPage: React.FC = () => {
     return true;
   };
 
-  const handleNext = () => {
+    const handleNext = async () => {
+    // Jika masih di Step 1 sampai 4, lanjut ke step berikutnya seperti biasa
     if (currentStep < 5) {
       const nextStep = currentStep + 1;
       setCurrentStep(nextStep);
       setMaxStepReached((prev) => Math.max(prev, nextStep));
-    } else {
+      return;
+    }
+
+    // STEP 5: User klik tombol "Luncurkan Kampanye"
+    setIsSubmitting(true);
+
+    try {
+      // 1. Tentukan saluran pengiriman utama
+      const primaryChannel = selectedChannels.includes("WhatsApp")
+        ? "whatsapp_qr"
+        : selectedChannels.includes("Telegram")
+        ? "telegram"
+        : "email";
+
+      // 2. Format target audiens
+      let audienceType = "all";
+      let audienceRef: string | null = null;
+      if (selectedAudience.startsWith("list:")) {
+        audienceType = "list";
+        audienceRef = selectedAudience;
+      } else if (selectedAudience.startsWith("tag:")) {
+        audienceType = "tag";
+        audienceRef = selectedAudience;
+      }
+
+           // 3. Format waktu jadwal (jika user memilih jadwal di masa depan)
+      let scheduledAt: string | null = null;
+      if (scheduleType === "scheduled" && scheduledDate && scheduledTime) {
+        scheduledAt = new Date(`${scheduledDate}T${scheduledTime}:00`).toISOString();
+      }
+
+      // 4. Hubungkan / Auto-create template ke database MariaDB
+      // Backend mewajibkan 'templateId' sebelum kampanye dapat dijadwalkan
+      let dbTemplateId: number | null = null;
+      if (selectedTemplateId && !isNaN(Number(selectedTemplateId))) {
+        dbTemplateId = Number(selectedTemplateId);
+      } else {
+        // Buat template di DB dengan konten dari wizard Step 3
+        const tplRes = await api.post("/templates", {
+          name: `Tpl: ${campaignName.trim()} #${Date.now().toString().slice(-4)}`,
+          channelMode: "multiple",
+          subject: emailSubject || campaignName.trim(),
+          contentHtml: emailContent || `<p>${campaignName.trim()}</p>`,
+          contentWhatsapp: waContent || "",
+          contentTelegram: telegramContent || "",
+        });
+        dbTemplateId = tplRes.data?.data?.id || null;
+      }
+
+      // 5. Siapkan payload data sesuai schema backend (createCampaignSchema)
+      const payload = {
+        name: campaignName.trim(),
+        channel: primaryChannel,
+        templateId: dbTemplateId,
+        audienceType,
+        audienceRef,
+        scheduledAt,
+      };
+
+      // 6. Panggil API backend POST /api/v1/campaigns
+      const res = await api.post("/campaigns", payload);
+      const createdCampaign = res.data?.data;
+
+      // 7. Jika tipe 'instant', langsung antrikan penerima untuk blast
+      if (scheduleType === "instant" && createdCampaign?.id) {
+        await api.post(`/campaigns/${createdCampaign.id}/schedule`);
+      }
+
+
+      // Hapus draf lokal di browser setelah sukses
       try {
         localStorage.removeItem(DRAFT_STORAGE_KEY);
       } catch (e) {}
 
       toast.success(
-        `Kampanye "${campaignName}" multichannel (${selectedChannels.join(", ")}) berhasil ${
-          scheduleType === "instant" ? "diluncurkan!" : "dijadwalkan!"
+        `Kampanye "${campaignName}" berhasil ${
+          scheduleType === "instant" ? "diluncurkan ke antrean blast! 🚀" : "dijadwalkan!"
         }`
       );
+
+      // Pindah ke halaman tabel kampanye
       navigate("/campaigns");
+    } catch (err: any) {
+      const msg = err.response?.data?.message || "Gagal membuat kampanye. Silakan coba lagi.";
+      toast.error(msg);
+    } finally {
+      setIsSubmitting(false);
     }
   };
+
 
   const handleBack = () => {
     if (currentStep > 1) {
@@ -600,23 +683,33 @@ export const NewCampaignPage: React.FC = () => {
             </button>
           )}
 
-          <button
+                    <button
             type="button"
-            disabled={!canContinue()}
+            disabled={!canContinue() || isSubmitting}
             onClick={handleNext}
             className={`flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-xs font-semibold transition cursor-pointer shadow-xs active:scale-95 ${
-              canContinue()
+              canContinue() && !isSubmitting
                 ? currentStep === 5
                   ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20"
                   : "bg-[#0284c7] hover:bg-[#0369a1] text-white shadow-sky-600/20"
                 : "bg-slate-200 text-slate-400 cursor-not-allowed"
             }`}
           >
-            <span>{currentStep === 5 ? "Luncurkan Kampanye" : "Continue"}</span>
-            <ArrowRight className="h-3.5 w-3.5" />
+            {isSubmitting ? (
+              <>
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                <span>Memproses...</span>
+              </>
+            ) : (
+              <>
+                <span>{currentStep === 5 ? "Luncurkan Kampanye" : "Continue"}</span>
+                <ArrowRight className="h-3.5 w-3.5" />
+              </>
+            )}
           </button>
         </div>
       </div>
+
 
       {/* 5. MODALS */}
       <CancelCampaignModal

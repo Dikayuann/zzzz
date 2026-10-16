@@ -7,6 +7,7 @@ import {
   Smartphone,
   Send,
   CheckCircle2,
+  Clock,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -56,6 +57,7 @@ export const WhatsAppChannelTab: React.FC<WhatsAppChannelTabProps> = ({ onStatus
   const [qrDailyCount, setQrDailyCount] = useState<number>(0);
   const [qrDailyQuota, setQrDailyQuota] = useState<number>(300);
   const [isInitializingQr, setIsInitializingQr] = useState(false);
+  const [qrConnectedAt, setQrConnectedAt] = useState<string | null>(null);
 
   // Retrieve Baileys WhatsApp QR status from backend
   const fetchWhatsappQrStatus = async () => {
@@ -71,6 +73,7 @@ export const WhatsAppChannelTab: React.FC<WhatsAppChannelTabProps> = ({ onStatus
         setQrDataUrl(data.qrDataUrl);
         setQrDailyCount(data.dailyCount || 0);
         setQrDailyQuota(data.dailyQuota || 300);
+        setQrConnectedAt(data.connectedAt || null);
         onStatusChange?.(connected || waConnected);
       }
     } catch (err: any) {
@@ -426,6 +429,26 @@ export const WhatsAppChannelTab: React.FC<WhatsAppChannelTabProps> = ({ onStatus
                           ? `+${qrPhoneNumber.replace(/(\d{2})(\d{3})(\d{4})(\d+)/, "$1 $2-$3-$4")}`
                           : "+62 812-XXXX-XXXX"}
                       </p>
+                      {qrConnectedAt && (
+                        <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mt-1.5">
+                          <Clock className="h-3 w-3 text-slate-400 shrink-0" />
+                          <span>
+                            Tertaut sejak:{" "}
+                            <span className="font-semibold text-slate-700">
+                              {new Date(qrConnectedAt).toLocaleDateString("id-ID", {
+                                day: "numeric",
+                                month: "short",
+                                year: "numeric",
+                              })},{" "}
+                              {new Date(qrConnectedAt).toLocaleTimeString("id-ID", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}{" "}
+                              WIB
+                            </span>
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -472,6 +495,7 @@ export const WhatsAppChannelTab: React.FC<WhatsAppChannelTabProps> = ({ onStatus
                     <span>Reset otomatis 00:00 WIB</span>
                   </div>
                 </div>
+
               </div>
             )}
           </div>

@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus } from "lucide-react";
+import { Plus, RefreshCw, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import type { CampaignItem, CampaignChannel } from "@/types/campaign";
-import { INITIAL_CAMPAIGNS } from "@/data/mockCampaigns";
+import { useCampaigns } from "@/hooks/useCampaigns";
 import {
   CampaignTable,
   CampaignDetailSheet,
@@ -15,10 +15,19 @@ import {
 export const CampaignsPage: React.FC = () => {
   const navigate = useNavigate();
 
-  const [campaigns, setCampaigns] = useState<CampaignItem[]>(INITIAL_CAMPAIGNS);
-  const [selectedTab, setSelectedTab] = useState<string>("All");
+   const {
+    campaigns,
+    setCampaigns,
+    isLoading,
+    errorMessage,
+    fetchCampaigns,
+    deleteCampaign,
+  } = useCampaigns();
+   const [selectedTab, setSelectedTab] = useState<string>("All");
   const [selectedChannel, setSelectedChannel] = useState<string>("All");
   const [searchQuery, setSearchQuery] = useState("");
+
+  
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [previewCampaign, setPreviewCampaign] = useState<CampaignItem | null>(null);
@@ -81,8 +90,7 @@ export const CampaignsPage: React.FC = () => {
   };
 
   const handleDelete = (id: string, name: string) => {
-    setCampaigns((prev) => prev.filter((c) => c.id !== id));
-    toast.success(`Kampanye "${name}" berhasil dihapus.`);
+    deleteCampaign(id, name);
   };
 
   const handleCreateDraft = (
@@ -174,14 +182,36 @@ export const CampaignsPage: React.FC = () => {
         totalCampaignsCount={campaigns.length}
       />
 
-      {/* 4. Main Campaign Table */}
-      <CampaignTable
-        campaigns={filteredCampaigns}
-        onOpenPreview={handleOpenPreview}
-        onDuplicate={handleDuplicate}
-        onRetryFailed={handleRetryFailed}
-        onDelete={handleDelete}
-      />
+       {/* 4. Main Campaign Table (Handling 3 State: Loading, Error, Success) */}
+      {isLoading ? (
+        // A. KONDISI LOADING
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-12 text-center shadow-2xs space-y-3">
+          <RefreshCw className="h-6 w-6 text-sky-600 animate-spin mx-auto" />
+          <p className="text-xs text-slate-500 font-medium">Memuat daftar kampanye dari database...</p>
+        </div>
+      ) : errorMessage ? (
+        // B. KONDISI ERROR
+        <div className="rounded-2xl border border-rose-200 bg-rose-50/50 p-8 text-center shadow-2xs space-y-3">
+          <AlertCircle className="h-6 w-6 text-rose-500 mx-auto" />
+          <p className="text-xs text-rose-700 font-semibold">{errorMessage}</p>
+          <button
+            onClick={fetchCampaigns}
+            className="px-4 py-2 rounded-xl bg-white border border-rose-300 text-rose-700 hover:bg-rose-100 text-xs font-semibold cursor-pointer transition shadow-2xs"
+          >
+            Coba Lagi
+          </button>
+        </div>
+      ) : (
+        // C. KONDISI SUKSES / EMPTY (Ditangani langsung di dalam CampaignTable)
+        <CampaignTable
+          campaigns={filteredCampaigns}
+          onOpenPreview={handleOpenPreview}
+          onDuplicate={handleDuplicate}
+          onRetryFailed={handleRetryFailed}
+          onDelete={handleDelete}
+        />
+      )}
+
 
       {/* 5. Slide-Over Detail Sheet */}
       <CampaignDetailSheet
