@@ -78,6 +78,11 @@ export const initWhatsappQrSession = async (tenantId: number) => {
 
             activeQrCodes.delete(tenantId);
 
+            const existingSession = await prisma.whatsappQrSession.findUnique({
+                where: { tenantId },
+                select: { connectedAt: true },
+            });
+
             await prisma.whatsappQrSession.upsert({
                 where: { tenantId },
                 update: {
@@ -85,7 +90,7 @@ export const initWhatsappQrSession = async (tenantId: number) => {
                     phoneNumber,
                     pushName,
                     qrRaw: null,
-                    connectedAt: new Date(),
+                    connectedAt: existingSession?.connectedAt || new Date(),
                     lastActiveAt: new Date(),
                 },
                 create: {
@@ -120,6 +125,9 @@ export const initWhatsappQrSession = async (tenantId: number) => {
                     data: {
                         status: "disconnected",
                         qrRaw: null,
+                        phoneNumber: null,
+                        pushName: null,
+                        connectedAt: null,
                     },
                 });
             } else if (shouldReconnect) {
@@ -337,6 +345,7 @@ export const disconnectWhatsappQrSession = async (tenantId: number) => {
             qrRaw: null,
             phoneNumber: null,
             pushName: null,
+            connectedAt: null,
         },
     });
 

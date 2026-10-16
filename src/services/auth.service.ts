@@ -15,8 +15,9 @@ import { sendOtpEmail, sendPasswordResetEmail } from "../lib/system-mailer";
 import { logAudit } from "../lib/audit";
 import { AppError } from "../shared/errors/AppError";
 
+import { JWT_SECRET } from "../config/jwt";
+
 const BCRYPT_ROUNDS = 12;
-const JWT_SECRET = process.env.JWT_SECRET || "default_jwt_secret";
 
 export const registerUser = async (data: RegisterInput) => {
     const existingUser = await prisma.user.findUnique({

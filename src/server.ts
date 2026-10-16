@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from 'express';
 import cors from 'cors';
+import helmet from "helmet";
 import {setupSwagger} from "./config/swagger";
 import {errorHandler} from "./middlewares/error.middleware";
 import authRoutes from './routes/auth.routes';
@@ -13,16 +14,23 @@ import smtpRoutes from "./routes/smtp.routes";
 import templateRoutes from "./routes/template.routes";
 import telegramRoutes from "./routes/telegram.routes";
 import whatsappQrRoutes from './routes/whatsapp-qr.routes';
+import campaignRoutes from './routes/campaign.routes';
 import { restoreActiveWhatsappSessions } from "./services/whatsapp-qr.service";
+import { startTelegramPolling } from "./services/telegram.service";
 
 
 
 const app = express();
 
+app.use(helmet());
+
+// Kunci CORS hanya ke domain frontend terdaftar
+const allowedOrigin = process.env.FRONTEND_URL || "http://localhost:5173";
 app.use(cors({
-    origin: '*',
+    origin: allowedOrigin,
     credentials: true,
 }));
+
 app.use(express.json());
 
 // mengaktifkan swagger ui
@@ -38,6 +46,7 @@ app.use('/api/v1/users', userRoutes)
 app.use('/api/v1/settings/smtp', smtpRoutes);
 app.use('/api/v1/channels/telegram', telegramRoutes);
 app.use('/api/v1/channels/whatsapp/qr', whatsappQrRoutes)
+app.use('/api/v1/campaigns', campaignRoutes);
 app.use(errorHandler);
 
 
@@ -48,4 +57,6 @@ app.listen(PORT, () => {
     console.log(`📑 Dokumentasi Swagger: http://localhost:${PORT}/api-docs`);
     // Memulihkan sesi WhatsApp Web yang sudah tersambung
     restoreActiveWhatsappSessions();
+    // Memulai polling otomatis Telegram Bot
+    startTelegramPolling();
 });

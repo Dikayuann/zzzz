@@ -1,7 +1,11 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 
-const JWT_SECRET = process.env.JWT_SECRET || "default_jwt_secret";
+import { JWT_SECRET } from "../config/jwt";
+
+if ((!process.env.JWT_SECRET || process.env.JWT_SECRET.trim() === "") && process.env.NODE_ENV === "production") {
+    throw new Error("[FATAL SECURITY]: JWT_SECRET wajib dikonfigurasi di file .env sebelum menjalankan di production!");
+}
 
 export interface AuthUser {
     userId: number;

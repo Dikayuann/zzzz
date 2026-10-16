@@ -41,6 +41,12 @@ const PERMISSIONS_DATA = [
     { module: "broadcast", action: "view" },
     { module: "broadcast", action: "send" },
 
+    // Modul Campaigns
+    { module: "campaigns", action: "view" },
+    { module: "campaigns", action: "create" },
+    { module: "campaigns", action: "edit" },
+    { module: "campaigns", action: "delete" },
+
     // Modul Analytics / Reports
     { module: "analytics", action: "view" },
 ];
@@ -81,6 +87,7 @@ async function main() {
                 "templates:view", "templates:create", "templates:edit", "templates:delete",
                 "scheduler:view", "scheduler:create", "scheduler:edit", "scheduler:delete",
                 "broadcast:view", "broadcast:send",
+                "campaigns:view", "campaigns:create", "campaigns:edit", "campaigns:delete",
                 "analytics:view",
             ],
         },
@@ -91,6 +98,7 @@ async function main() {
                 "contacts:view", "contacts:create", "contacts:edit",
                 "templates:view", "templates:create", "templates:edit",
                 "scheduler:view",
+                "campaigns:view", "campaigns:create", "campaigns:edit",
                 "analytics:view",
             ],
         },
@@ -101,6 +109,7 @@ async function main() {
                 "templates:view",
                 "scheduler:view",
                 "broadcast:view",
+                "campaigns:view",
                 "analytics:view",
             ],
         },

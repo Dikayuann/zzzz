@@ -31,6 +31,7 @@ model Tenant {
   telegramBotId          Int?
   whatsappQrSession      WhatsappQrSession?
   whatsappBusinessConfig WhatsappBusinessConfig?
+  campaigns              Campaign[]
 
   @@map("tenants")
 }
@@ -53,6 +54,8 @@ model User {
   passwordResets     PasswordReset[]
   refreshTokens      RefreshToken[]
   templateVersions   TemplateVersion[]
+  campaigns          Campaign[]          @relation("CampaignOwner")
+  approvedCampaigns  Campaign[]          @relation("CampaignApprover")
 
   @@map("users")
 }
@@ -175,7 +178,8 @@ model Contact {
   tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   listContacts ListContact[]
   contactTags  ContactTag[]
-  consents     Consent[]
+  consents           Consent[]
+  campaignRecipients CampaignRecipient[]
 
   @@index([tenantId], map: "idx_contacts_tenant")
   @@index([tenantId, whatsappNumber], map: "idx_contacts_tenant_wa")
@@ -276,7 +280,8 @@ model Template {
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
   tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  versions TemplateVersion[]
+  versions  TemplateVersion[]
+  campaigns Campaign[]
 
   @@index([tenantId], map: "idx_templates_tenant")
   @@map("templates")
@@ -306,7 +311,8 @@ model TemplateVersion {
   createdById Int?     @map("created_by")
   createdAt   DateTime @default(now()) @map("created_at")
   template    Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
-  creator     User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  creator     User?      @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  campaigns   Campaign[]
 
   @@unique([templateId, versionNo], map: "uq_template_version")
   @@index([metaTemplateId], map: "idx_template_meta_id")
@@ -370,3 +376,82 @@ model WhatsappBusinessConfig {
 
   @@map("whatsapp_business_configs")
 }
+
+model Campaign {
+  id                Int       @id @default(autoincrement())
+  tenantId          Int       @map("tenant_id")
+  ownerUserId       Int       @map("owner_user_id")
+  name              String    @db.VarChar(255)
+  templateId        Int?      @map("template_id")
+  templateVersionId Int?      @map("template_version_id")
+  status            String    @default("draft") @db.VarChar(50) // draft, scheduled, sending, sent, failed, paused, cancelled
+  channel           String    @db.VarChar(50) // email, telegram, whatsapp_qr, whatsapp_business
+  audienceType      String?   @default("all") @map("audience_type") @db.VarChar(50) // list, tag, all
+  audienceRef       String?   @map("audience_ref") @db.VarChar(100) // list:1, tag:2, all
+  scheduledAt       DateTime? @map("scheduled_at")
+  sentAt            DateTime? @map("sent_at")
+  completedAt       DateTime? @map("completed_at")
+  recurrenceRule    String?   @map("recurrence_rule") @db.VarChar(100)
+  approvedById      Int?      @map("approved_by")
+
+  // Real-time counter metrics (updated by worker during execution)
+  totalRecipients   Int       @default(0) @map("total_recipients")
+  sentCount         Int       @default(0) @map("sent_count")
+  deliveredCount    Int       @default(0) @map("delivered_count")
+  readCount         Int       @default(0) @map("read_count")
+  failedCount       Int       @default(0) @map("failed_count")
+
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  owner           User              @relation("CampaignOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  approver        User?             @relation("CampaignApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  template        Template?         @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  templateVersion TemplateVersion?  @relation(fields: [templateVersionId], references: [id], onDelete: SetNull)
+  recipients      CampaignRecipient[]
+
+  @@index([tenantId, status], map: "idx_campaigns_tenant_status")
+  @@index([scheduledAt], map: "idx_campaigns_scheduled")
+  @@map("campaigns")
+}
+
+model CampaignRecipient {
+  id                Int       @id @default(autoincrement())
+  campaignId        Int       @map("campaign_id")
+  contactId         Int       @map("contact_id")
+  channel           String    @db.VarChar(50) // email, telegram, whatsapp_qr, whatsapp_business
+  status            String    @default("queued") @db.VarChar(50) // queued, sending, sent, delivered, read, failed
+  providerMessageId String?   @unique(map: "uq_recipient_provider_msg_id") @map("provider_message_id") @db.VarChar(255)
+  errorCode         String?   @map("error_code") @db.VarChar(100)
+  errorMessage      String?   @map("error_message") @db.Text
+  sentAt            DateTime? @map("sent_at")
+  deliveredAt       DateTime? @map("delivered_at")
+  readAt            DateTime? @map("read_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  campaign     Campaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact      Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  deliveryLogs DeliveryLog[]
+
+  @@unique([campaignId, contactId, channel], map: "uq_recipients_campaign_contact_channel")
+  @@index([campaignId], map: "idx_recipients_campaign")
+  @@index([campaignId, status], map: "idx_recipients_campaign_status")
+  @@map("campaign_recipients")
+}
+
+model DeliveryLog {
+  id                  Int      @id @default(autoincrement())
+  campaignRecipientId Int      @map("campaign_recipient_id")
+  eventType           String   @map("event_type") @db.VarChar(50) // queued, sent, delivered, read, failed
+  eventAt             DateTime @default(now()) @map("event_at")
+  payloadJson         Json?    @map("raw_payload_json")
+
+  campaignRecipient CampaignRecipient @relation(fields: [campaignRecipientId], references: [id], onDelete: Cascade)
+
+  @@index([campaignRecipientId], map: "idx_logs_recipient")
+  @@index([campaignRecipientId, eventType], map: "idx_logs_recipient_event")
+  @@map("delivery_logs")
+}
+

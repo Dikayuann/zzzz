@@ -96,6 +96,9 @@ export const connectTelegramBot = async (
         },
     });
 
+    // Jalankan sync instan agar jika user sudah klik /start segera terdeteksi
+    syncTelegramSubscribers(tenantId).catch(() => {});
+
     // catat auditlog
     await logAudit({
         tenantId,
@@ -366,6 +369,47 @@ export const getTelegramSubscribers = async (tenantId: number) => {
         total: contacts.length,
         contacts,
     };
+};
+
+// 8. Background Poller untuk Bot Telegram yang Aktif
+let telegramPollingInterval: NodeJS.Timeout | null = null;
+let isPollingActive = false;
+
+export const pollAllConnectedBots = async () => {
+    if (isPollingActive) return;
+    isPollingActive = true;
+    try {
+        const activeBots = await prisma.telegramBot.findMany({
+            where: { status: "connected" },
+            select: { tenantId: true },
+        });
+
+        for (const bot of activeBots) {
+            try {
+                await syncTelegramSubscribers(bot.tenantId);
+            } catch (_) {
+                // Abaikan error per bot agar tidak memutus polling bot lain
+            }
+        }
+    } catch (_) {
+    } finally {
+        isPollingActive = false;
+    }
+};
+
+export const startTelegramPolling = () => {
+    if (telegramPollingInterval) return;
+    pollAllConnectedBots();
+    // Cek update setiap 3 detik secara background
+    telegramPollingInterval = setInterval(pollAllConnectedBots, 3000);
+    console.log("🤖 [Telegram] Background polling aktif (otomatis balas /start)");
+};
+
+export const stopTelegramPolling = () => {
+    if (telegramPollingInterval) {
+        clearInterval(telegramPollingInterval);
+        telegramPollingInterval = null;
+    }
 };
 
 
