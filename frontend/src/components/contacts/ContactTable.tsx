@@ -1,5 +1,5 @@
 import React from "react";
-import { Folder } from "lucide-react";
+import { Folder, Eye, Trash2 } from "lucide-react";
 import type { ContactItem, ContactList } from "@/types/contact";
 
 interface ContactTableProps {
@@ -9,6 +9,7 @@ interface ContactTableProps {
   onToggleSelectRow: (id: string) => void;
   onToggleSelectAll: () => void;
   onRowClick: (contact: ContactItem) => void;
+  onRequestDeleteContact?: (contact: ContactItem) => void;
 }
 
 export const ContactTable: React.FC<ContactTableProps> = ({
@@ -18,6 +19,7 @@ export const ContactTable: React.FC<ContactTableProps> = ({
   onToggleSelectRow,
   onToggleSelectAll,
   onRowClick,
+  onRequestDeleteContact,
 }) => {
   const allVisibleSelected =
     contacts.length > 0 && contacts.every((c) => selectedIds.includes(c.id));
@@ -49,13 +51,14 @@ export const ContactTable: React.FC<ContactTableProps> = ({
               <th className="py-3.5 px-4 font-bold text-slate-500 whitespace-nowrap min-w-[180px]">NO. WHATSAPP</th>
               <th className="py-3.5 px-4 font-bold text-slate-500 whitespace-nowrap min-w-[200px]">LIST & TAGS</th>
               <th className="py-3.5 px-4 font-bold text-slate-500 whitespace-nowrap min-w-[210px]">CONSENT CHANNEL</th>
-              <th className="py-3.5 px-4 font-bold text-slate-500 whitespace-nowrap min-w-[120px]">STATUS</th>
+              <th className="py-3.5 px-4 font-bold text-slate-500 whitespace-nowrap min-w-[100px]">STATUS</th>
+              <th className="py-3.5 px-4 font-bold text-slate-500 whitespace-nowrap text-right pr-5 min-w-[130px]">AKSI</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-xs">
             {contacts.length === 0 ? (
               <tr>
-                <td colSpan={7} className="py-12 text-center text-slate-400">
+                <td colSpan={8} className="py-12 text-center text-slate-400">
                   <p className="font-medium text-sm text-slate-600">Tidak ada kontak ditemukan</p>
                   <p className="text-xs text-slate-400 mt-1">
                     Coba sesuaikan kata kunci pencarian atau tag filter di atas.
@@ -193,6 +196,35 @@ export const ContactTable: React.FC<ContactTableProps> = ({
                       {contact.status === "Bounced" && (
                         <span className="font-semibold text-rose-600">Bounced</span>
                       )}
+                    </td>
+
+                    {/* AKSI / PREVIEW & HAPUS */}
+                    <td
+                      className="py-4 px-4 text-right pr-5 whitespace-nowrap"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => onRowClick(contact)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-sky-50 hover:border-sky-300 text-slate-700 hover:text-sky-700 text-[11px] font-semibold transition shadow-2xs cursor-pointer active:scale-95"
+                          title="Lihat Detail Kontak"
+                        >
+                          <Eye className="h-3 w-3" />
+                          <span>Preview</span>
+                        </button>
+
+                        {onRequestDeleteContact && (
+                          <button
+                            type="button"
+                            onClick={() => onRequestDeleteContact(contact)}
+                            className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                            title="Hapus kontak ini"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );

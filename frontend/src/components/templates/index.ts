@@ -6,3 +6,4 @@ export { TemplateSelectorModal } from "./TemplateSelectorModal";
 export type { DatabaseTemplateItem } from "./TemplateSelectorModal";
 export * from "./blocks";
 export { TestSendModal } from "./TestSendModal";
+export { UnsavedChangesModal } from "./UnsavedChangesModal";

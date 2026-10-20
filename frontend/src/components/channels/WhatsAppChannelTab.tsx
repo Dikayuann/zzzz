@@ -55,7 +55,7 @@ export const WhatsAppChannelTab: React.FC<WhatsAppChannelTabProps> = ({ onStatus
   const [qrPhoneNumber, setQrPhoneNumber] = useState<string | null>(null);
   const [qrPushName, setQrPushName] = useState<string | null>(null);
   const [qrDailyCount, setQrDailyCount] = useState<number>(0);
-  const [qrDailyQuota, setQrDailyQuota] = useState<number>(300);
+  const [qrDailyQuota, setQrDailyQuota] = useState<number>(35);
   const [isInitializingQr, setIsInitializingQr] = useState(false);
   const [qrConnectedAt, setQrConnectedAt] = useState<string | null>(null);
 
@@ -72,7 +72,7 @@ export const WhatsAppChannelTab: React.FC<WhatsAppChannelTabProps> = ({ onStatus
         setQrPushName(data.pushName);
         setQrDataUrl(data.qrDataUrl);
         setQrDailyCount(data.dailyCount || 0);
-        setQrDailyQuota(data.dailyQuota || 300);
+        setQrDailyQuota(data.dailyQuota || 35);
         setQrConnectedAt(data.connectedAt || null);
         onStatusChange?.(connected || waConnected);
       }
@@ -485,7 +485,7 @@ export const WhatsAppChannelTab: React.FC<WhatsAppChannelTabProps> = ({ onStatus
                     <div
                       className="h-full bg-emerald-500 rounded-full transition-all duration-300"
                       style={{
-                        width: `${Math.min(100, Math.max(2, (qrDailyCount / (qrDailyQuota || 300)) * 100))}%`,
+                        width: `${Math.min(100, Math.max(2, (qrDailyCount / (qrDailyQuota || 35)) * 100))}%`,
                       }}
                     />
                   </div>

@@ -146,15 +146,38 @@ export function interpolateMergeTags(
     });
   }
 
-  return text.replace(/\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}/g, (_, tagKey) => {
-    const key = tagKey.toLowerCase();
+  const interpolateKey = (rawKey: string): string => {
+    const key = rawKey.trim().toLowerCase();
     if (replacements[key] !== undefined) {
       return replacements[key];
     }
     // Clean fallback for custom tags
     const readable = key.replace(/_/g, " ");
     return readable.charAt(0).toUpperCase() + readable.slice(1);
+  };
+
+  // 1. Double curly brackets: {{ tag_name }}
+  let result = text.replace(/\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}/g, (_, tagKey) => interpolateKey(tagKey));
+
+  // 2. Square brackets: [ tag_name ] (e.g. [nama], [first_name], [kode_promo])
+  result = result.replace(/\[\s*([a-zA-Z0-9_-]+)\s*\]/g, (match, tagKey) => {
+    const key = tagKey.trim().toLowerCase();
+    if (replacements[key] !== undefined) {
+      return replacements[key];
+    }
+    return match; // don't touch markdown links or non-matching brackets
   });
+
+  // 3. Single curly brackets: { tag_name } (e.g. {nama}, {first_name})
+  result = result.replace(/\{\s*([a-zA-Z0-9_-]+)\s*\}/g, (match, tagKey) => {
+    const key = tagKey.trim().toLowerCase();
+    if (replacements[key] !== undefined) {
+      return replacements[key];
+    }
+    return match;
+  });
+
+  return result;
 }
 
 /**
@@ -174,11 +197,11 @@ export function applyToolbarAction(
   let newCursorStart = start;
   let newCursorEnd = end;
 
-  const isWA = channel === "whatsapp";
+  const isMessaging = channel === "whatsapp" || channel === "telegram";
 
   switch (action) {
     case "bold": {
-      const wrapChar = isWA ? "*" : "**";
+      const wrapChar = isMessaging ? "*" : "**";
       const wrapLen = wrapChar.length;
 
       if (selectedText) {
@@ -203,7 +226,7 @@ export function applyToolbarAction(
     }
 
     case "italic": {
-      const wrapChar = isWA ? "_" : "*";
+      const wrapChar = isMessaging ? "_" : "*";
 
       if (selectedText) {
         if (selectedText.startsWith(wrapChar) && selectedText.endsWith(wrapChar) && selectedText.length >= 2) {
@@ -372,6 +395,33 @@ export function applyToolbarAction(
       }
       break;
     }
+
+    case "bracket": {
+      if (selectedText) {
+        if (
+          (selectedText.startsWith("{{") && selectedText.endsWith("}}") && selectedText.length >= 4) ||
+          (selectedText.startsWith("[") && selectedText.endsWith("]") && selectedText.length >= 2)
+        ) {
+          const unwrapped = selectedText.startsWith("{{")
+            ? selectedText.slice(2, -2).trim()
+            : selectedText.slice(1, -1).trim();
+          newText = currentValue.substring(0, start) + unwrapped + currentValue.substring(end);
+          newCursorStart = start;
+          newCursorEnd = start + unwrapped.length;
+        } else {
+          const wrapped = `{{${selectedText}}}`;
+          newText = currentValue.substring(0, start) + wrapped + currentValue.substring(end);
+          newCursorStart = start + 2;
+          newCursorEnd = end + 2;
+        }
+      } else {
+        const placeholder = "{{nama}}";
+        newText = currentValue.substring(0, start) + placeholder + currentValue.substring(end);
+        newCursorStart = start;
+        newCursorEnd = start + placeholder.length;
+      }
+      break;
+    }
   }
 
   setTimeout(() => {
@@ -515,7 +565,7 @@ export function parseInlineFormatting(text: string): React.ReactNode {
 export function parseWhatsAppFormatting(text: string): React.ReactNode {
   if (!text) return null;
 
-  const pattern = /(```[\s\S]*?```|\*[^*\n]+?\*|_[^_\n]+?_|~[^~\n]+?~)/g;
+  const pattern = /(```[\s\S]*?```|\*\*[^*\n]+?\*\*|\*[^*\n]+?\*|_[^_\n]+?_|~[^~\n]+?~)/g;
   const parts = text.split(pattern);
 
   return parts.map((part, index) => {
@@ -530,6 +580,18 @@ export function parseWhatsAppFormatting(text: string): React.ReactNode {
           className: "font-mono bg-slate-100 text-slate-800 px-1.5 py-0.5 rounded text-[11px]",
         },
         codeContent
+      );
+    }
+
+    if (part.startsWith("**") && part.endsWith("**") && part.length >= 4) {
+      const boldContent = part.slice(2, -2);
+      return React.createElement(
+        "strong",
+        {
+          key: index,
+          className: "font-bold text-slate-900",
+        },
+        parseWhatsAppFormatting(boldContent)
       );
     }
 
@@ -598,7 +660,7 @@ export function compileTemplateToEmailHtml({
   websiteUrl = "https://acmecorp.co",
   instagramUrl = "https://instagram.com/acmecorp",
   whatsappUrl = "https://wa.me/6281234567890",
-  footerAddress = "PT Acme Digital Nusantara, Jakarta, Indonesia",
+  footerAddress = "",
 }: {
   subject: string;
   preheader?: string;
@@ -635,11 +697,19 @@ export function compileTemplateToEmailHtml({
   }
 
   // 1. If content is already complete HTML document
-  if (content.trim().toLowerCase().startsWith("<!doctype") || content.trim().toLowerCase().startsWith("<html")) {
-    return interpolateMergeTags(content, recipient, orgName);
+  if (isFullHtmlDoc(content)) {
+    const interpolated = interpolateMergeTags(content, recipient, orgName);
+    if (interpolated.includes("</head>")) {
+      const guardStyle = `<style id="__preview_guard__">
+        img { max-width: 100% !important; height: auto !important; }
+        table { border-collapse: collapse; }
+      </style></head>`;
+      return interpolated.replace("</head>", guardStyle);
+    }
+    return interpolated;
   }
 
-  // 2. If content is raw HTML fragment
+  // 2. If content is raw HTML fragment (e.g. from Canva, Stripo, or custom HTML blocks)
   if (isRawHtml(content)) {
     const interpolatedBody = interpolateMergeTags(content, recipient, orgName);
     return `<!DOCTYPE html>
@@ -649,14 +719,15 @@ export function compileTemplateToEmailHtml({
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${compiledSubj}</title>
   <style>
-    body { margin: 0; padding: 0; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
-    img { border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }
-    table { border-collapse: collapse !important; }
+    html, body { margin: 0; padding: 0; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    img { border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; max-width: 100% !important; }
+    table { border-collapse: collapse; }
+    div { box-sizing: border-box; }
   </style>
 </head>
-<body style="margin: 0; padding: 24px 16px; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
+<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
   ${compiledPreheader ? `<div style="display: none; max-height: 0; overflow: hidden; mso-hide: all; font-size: 1px; line-height: 1px; color: #f8fafc;">${compiledPreheader}</div>` : ""}
-  <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 32px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+  <div style="max-width: 600px; width: 100%; margin: 0 auto; box-sizing: border-box; padding: 0;">
     ${logoHtml}
     ${interpolatedBody}
   </div>
@@ -793,7 +864,7 @@ export function compileTemplateToEmailHtml({
             </td>
           </tr>
           ${
-            enableSocial || footerAddress
+            enableSocial
               ? `<tr>
             <td style="padding: 20px 32px 24px 32px; background-color: #f8fafc; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #94a3b8;">
               ${socialLinksHtml}
@@ -813,79 +884,234 @@ export function compileTemplateToEmailHtml({
 
 export interface ExtractedTextBlock {
   id: string;
+  index: number;
   tag: string;
+  contextTag?: string;
   label: string;
   text: string;
+  hasMergeTags?: boolean;
+}
+
+interface CohesiveTextNode {
+  node: Node;
+  originalText: string;
+}
+
+export interface CohesiveBlock extends ExtractedTextBlock {
+  nodes: CohesiveTextNode[];
+}
+
+function getNextNodeInTree(node: Node, stopRoot: Node | null): Node | null {
+  if (node.firstChild) {
+    return node.firstChild;
+  }
+  let curr: Node | null = node;
+  while (curr) {
+    if (curr === stopRoot) return null;
+    if (curr.nextSibling) {
+      return curr.nextSibling;
+    }
+    curr = curr.parentNode;
+  }
+  return null;
 }
 
 /**
- * Extracts visible text strings (headings, paragraphs, button labels, list items) from HTML email
- * so users can edit text directly in visual/form mode without dealing with raw HTML tags.
+ * Returns true if there is a block or line boundary between nodeA and nodeB
+ * (different block container, or <br>, <hr>, <div>, etc. between them)
+ */
+function hasBoundaryBetween(nodeA: Node, nodeB: Node): boolean {
+  // 1. If closest block containers differ, they are in different paragraphs/cells
+  const containerA = nodeA.parentElement?.closest("td, th, p, h1, h2, h3, h4, h5, h6, li, blockquote, div");
+  const containerB = nodeB.parentElement?.closest("td, th, p, h1, h2, h3, h4, h5, h6, li, blockquote, div");
+  if (containerA !== containerB) {
+    return true;
+  }
+
+  // 2. If in the same container, check if any boundary tag (<br>, <hr>, <div>, <p>, <table>, <img>) appears between them
+  let curr: Node | null = nodeA;
+  const commonRoot = containerA || nodeA.ownerDocument?.body || null;
+
+  while (curr && curr !== nodeB) {
+    if (curr !== nodeA && curr.nodeType === Node.ELEMENT_NODE) {
+      const tag = (curr as Element).tagName.toUpperCase();
+      if (["BR", "HR", "DIV", "P", "TABLE", "TR", "TD", "TH", "H1", "H2", "H3", "H4", "H5", "H6", "LI", "IMG"].includes(tag)) {
+        return true;
+      }
+    }
+    curr = getNextNodeInTree(curr, commonRoot);
+  }
+
+  return false;
+}
+
+/**
+ * Walks all valid text nodes in document order, then groups adjacent inline text nodes
+ * that belong to the same sentence/paragraph (no <br>, <p>, <div>, <td> boundaries between them).
+ */
+export function extractCohesiveBlocksFromDoc(doc: Document): CohesiveBlock[] {
+  const ignoreTags = new Set([
+    "SCRIPT",
+    "STYLE",
+    "NOSCRIPT",
+    "TEMPLATE",
+    "XML",
+    "META",
+    "HEAD",
+    "TITLE",
+    "SVG",
+    "PATH",
+  ]);
+
+  const walker = doc.createTreeWalker(doc.body || doc.documentElement, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const parent = node.parentElement;
+      if (!parent || ignoreTags.has(parent.tagName.toUpperCase())) return NodeFilter.FILTER_REJECT;
+      const val = (node.nodeValue || "").trim();
+      if (!val) return NodeFilter.FILTER_REJECT;
+      if (val.startsWith("<!--") || val.endsWith("-->")) return NodeFilter.FILTER_REJECT;
+      if (val.startsWith("<![endif]") || val.startsWith("<!--[if") || val.includes("mso-")) return NodeFilter.FILTER_REJECT;
+      if (val.startsWith("<") && val.endsWith(">")) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+
+  const rawNodes: Node[] = [];
+  let n: Node | null;
+  while ((n = walker.nextNode())) {
+    rawNodes.push(n);
+  }
+
+  if (rawNodes.length === 0) return [];
+
+  // Group adjacent inline text nodes that belong to the same cohesive block
+  const groups: Node[][] = [];
+  let currentGroup: Node[] = [rawNodes[0]];
+
+  for (let i = 1; i < rawNodes.length; i++) {
+    const prevNode = rawNodes[i - 1];
+    const currNode = rawNodes[i];
+
+    if (hasBoundaryBetween(prevNode, currNode)) {
+      groups.push(currentGroup);
+      currentGroup = [currNode];
+    } else {
+      currentGroup.push(currNode);
+    }
+  }
+  if (currentGroup.length > 0) {
+    groups.push(currentGroup);
+  }
+
+  return groups.map((group, index) => {
+    let combinedText = "";
+    group.forEach((node, idx) => {
+      const val = (node.nodeValue || "").trim();
+      if (!val) return;
+      if (idx === 0) {
+        combinedText = val;
+      } else {
+        const needsSpace =
+          !combinedText.endsWith(" ") &&
+          !val.startsWith(" ") &&
+          !/^[.,!?;:)\]]/.test(val) &&
+          !/[(\[]$/.test(combinedText);
+        combinedText += (needsSpace ? " " : "") + val;
+      }
+    });
+
+    const firstNode = group[0];
+    const parentEl = firstNode.parentElement;
+    const immediateTag = (parentEl?.tagName || "span").toLowerCase();
+    const containerEl = parentEl?.closest("h1, h2, h3, h4, h5, h6, a, button, p, li, th, td, blockquote");
+    const containerTag = containerEl?.tagName.toLowerCase() || immediateTag;
+
+    let label = "Teks";
+    if (containerTag === "h1") label = "Judul Utama (H1)";
+    else if (containerTag === "h2") label = "Subjudul (H2)";
+    else if (containerTag === "h3" || containerTag === "h4") label = "Judul Bagian";
+    else if (containerTag === "a" || containerTag === "button") label = "Tombol / Tautan";
+    else if (containerTag === "p") label = "Paragraf";
+    else if (containerTag === "li") label = "Poin Daftar";
+    else if (containerTag === "th" || containerTag === "td") {
+      if (combinedText.length <= 40 && !combinedText.includes(".")) {
+        label = "Judul / Teks Singkat";
+      } else {
+        label = "Kolom / Tabel";
+      }
+    }
+
+    const hasMergeTags = /\{\{[^}]+\}\}/.test(combinedText);
+
+    return {
+      id: `txt-${index}-${immediateTag}`,
+      index,
+      tag: immediateTag,
+      contextTag: containerTag !== immediateTag ? containerTag : undefined,
+      label,
+      text: combinedText,
+      hasMergeTags,
+      nodes: group.map((node) => ({
+        node,
+        originalText: (node.nodeValue || "").trim(),
+      })),
+    };
+  });
+}
+
+/**
+ * Updates a cohesive block in a DOM document by index
+ */
+export function updateCohesiveBlockInDoc(doc: Document, targetIndex: number, newText: string): boolean {
+  const blocks = extractCohesiveBlocksFromDoc(doc);
+  const block = blocks[targetIndex];
+  if (!block || block.nodes.length === 0) return false;
+
+  if (block.nodes.length === 1) {
+    block.nodes[0].node.nodeValue = newText;
+    return true;
+  }
+
+  // Multiple nodes in paragraph (e.g. text + bold + text)
+  const boldNode = block.nodes.find((n) => {
+    const pTag = n.node.parentElement?.tagName.toUpperCase();
+    return pTag === "STRONG" || pTag === "B";
+  });
+
+  if (boldNode && boldNode.originalText && newText.includes(boldNode.originalText)) {
+    const parts = newText.split(boldNode.originalText);
+    const prefix = parts[0] || "";
+    const suffix = parts.slice(1).join(boldNode.originalText) || "";
+
+    block.nodes[0].node.nodeValue = prefix;
+    boldNode.node.nodeValue = boldNode.originalText;
+    block.nodes[block.nodes.length - 1].node.nodeValue = suffix;
+
+    for (let i = 1; i < block.nodes.length - 1; i++) {
+      if (block.nodes[i] !== boldNode) {
+        block.nodes[i].node.nodeValue = "";
+      }
+    }
+  } else {
+    block.nodes[0].node.nodeValue = newText;
+    for (let i = 1; i < block.nodes.length; i++) {
+      block.nodes[i].node.nodeValue = "";
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Extracts visible cohesive text blocks from HTML email
  */
 export function extractTextBlocksFromHtml(html: string): ExtractedTextBlock[] {
   if (!html || typeof window === "undefined") return [];
-
   try {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, "text/html");
-
-    const ignoreTags = new Set([
-      "SCRIPT",
-      "STYLE",
-      "NOSCRIPT",
-      "TEMPLATE",
-      "XML",
-      "META",
-      "HEAD",
-      "TITLE",
-    ]);
-
-    const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, {
-      acceptNode(node) {
-        const parent = node.parentElement;
-        if (!parent || ignoreTags.has(parent.tagName.toUpperCase())) {
-          return NodeFilter.FILTER_REJECT;
-        }
-        return NodeFilter.FILTER_ACCEPT;
-      },
-    });
-
-    const results: ExtractedTextBlock[] = [];
-    const seenTexts = new Set<string>();
-    let node: Node | null;
-    let index = 0;
-
-    while ((node = walker.nextNode())) {
-      const rawText = (node.nodeValue || "").trim();
-      if (!rawText || rawText.length < 2) continue;
-      // Filter out conditional comments or XML fragments
-      if (rawText.startsWith("<!--") || rawText.endsWith("-->")) continue;
-      if (rawText.startsWith("<![endif]") || rawText.startsWith("<!--[if") || rawText.includes("mso-")) continue;
-      if (rawText.startsWith("<") && rawText.endsWith(">")) continue;
-      if (seenTexts.has(rawText)) continue;
-
-      seenTexts.add(rawText);
-
-      const parentTag = (node.parentElement?.tagName || "div").toLowerCase();
-      let label = "Teks";
-      if (parentTag === "h1") label = "Judul Utama (H1)";
-      else if (parentTag === "h2") label = "Subjudul (H2)";
-      else if (parentTag === "h3" || parentTag === "h4") label = "Judul Bagian";
-      else if (parentTag === "a" || parentTag === "button") label = "Tombol / Tautan";
-      else if (parentTag === "p") label = "Paragraf";
-      else if (parentTag === "li") label = "Poin Daftar";
-      else if (parentTag === "strong" || parentTag === "b") label = "Teks Tebal";
-      else if (parentTag === "center") label = "Teks Tombol / Judul";
-
-      results.push({
-        id: `txt-${index++}-${parentTag}`,
-        tag: parentTag,
-        label,
-        text: rawText,
-      });
-    }
-
-    return results;
+    const blocks = extractCohesiveBlocksFromDoc(doc);
+    return blocks.map(({ nodes, ...rest }) => rest);
   } catch {
     return [];
   }
@@ -902,4 +1128,292 @@ export function replaceTextInHtml(
   if (!html || !targetText || targetText === newText) return html;
   return html.split(targetText).join(newText);
 }
+
+/**
+ * Deterministically updates the entire text of a cohesive text block by its exact ordinal index
+ */
+export function updateTextBlockByIndex(
+  html: string,
+  targetIndex: number,
+  newText: string
+): string {
+  if (!html || targetIndex < 0) return html;
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+
+    const updated = updateCohesiveBlockInDoc(doc, targetIndex, newText);
+    if (!updated) return html;
+
+    if (isFullHtmlDoc(html)) {
+      const doctype = doc.doctype ? `<!DOCTYPE ${doc.doctype.name}>\n` : "<!DOCTYPE html>\n";
+      return doctype + doc.documentElement.outerHTML;
+    }
+    return doc.body.innerHTML;
+  } catch {
+    return html;
+  }
+}
+
+/**
+ * Replaces a specific text block by index or text safely using DOMParser
+ */
+export function replaceTextBlockInHtml(
+  html: string,
+  blockIndex: number,
+  oldText: string,
+  newText: string
+): string {
+  if (!html) return html;
+  if (blockIndex >= 0) {
+    const result = updateTextBlockByIndex(html, blockIndex, newText);
+    if (result !== html) return result;
+  }
+  if (!oldText || oldText === newText) return html;
+  return html.split(oldText).join(newText);
+}
+
+/**
+ * Detect if text content is a complete HTML document with html/head/body
+ */
+export function isFullHtmlDoc(html: string): boolean {
+  if (!html) return false;
+  const trimmed = html.trim().toLowerCase();
+  return (
+    trimmed.startsWith("<!doctype") ||
+    trimmed.startsWith("<html") ||
+    (trimmed.includes("<body") && trimmed.includes("</body")) ||
+    (trimmed.includes("<head") && trimmed.includes("</head"))
+  );
+}
+
+export const EDITOR_HELPER_STYLE_ID = "__campaign_editor_style__";
+
+export function getEditorHelperCss(): string {
+  return `
+    html, body {
+      scroll-behavior: auto !important;
+    }
+    body {
+      min-height: 420px;
+      outline: none;
+    }
+    [contenteditable="true"] *:hover {
+      outline: 1.5px dashed #94a3b8 !important;
+      outline-offset: 2px;
+      cursor: text;
+    }
+    [contenteditable="true"] *:focus {
+      outline: 1.5px solid #0f172a !important;
+      outline-offset: 2px;
+    }
+    a, [role="button"] {
+      cursor: pointer !important;
+    }
+    a:hover {
+      outline: 1.5px solid #2563eb !important;
+      outline-offset: 2px !important;
+    }
+    img {
+      cursor: pointer !important;
+      transition: outline 0.15s ease-in-out;
+    }
+    img:hover {
+      outline: 2px dashed #0284c7 !important;
+      outline-offset: 2px !important;
+    }
+  `;
+}
+
+/**
+ * Prepares HTML content for the in-place editable visual iframe.
+ * Preserves the exact DOCTYPE, HEAD, STYLES, and BODY if it's already a full HTML document.
+ */
+export function prepareHtmlForVisualEditor(content: string): { fullHtml: string; isFullDoc: boolean } {
+  if (!content || !content.trim()) {
+    return {
+      fullHtml: `<!DOCTYPE html><html><head><meta charset="utf-8"><style id="${EDITOR_HELPER_STYLE_ID}">${getEditorHelperCss()}</style></head><body contenteditable="true" data-cb-editor="true" style="margin: 0; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; min-height: 380px;"></body></html>`,
+      isFullDoc: false,
+    };
+  }
+
+  const isFullDoc = isFullHtmlDoc(content);
+
+  if (isFullDoc) {
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(content, "text/html");
+
+      let head = doc.head;
+      if (!head) {
+        head = doc.createElement("head");
+        doc.documentElement.insertBefore(head, doc.body);
+      }
+
+      let existingStyle = head.querySelector(`style#${EDITOR_HELPER_STYLE_ID}`);
+      if (!existingStyle) {
+        const styleEl = doc.createElement("style");
+        styleEl.id = EDITOR_HELPER_STYLE_ID;
+        styleEl.textContent = getEditorHelperCss();
+        head.appendChild(styleEl);
+      }
+
+      if (doc.body) {
+        doc.body.setAttribute("contenteditable", "true");
+        doc.body.setAttribute("data-cb-editor", "true");
+      }
+
+      const doctype = doc.doctype ? `<!DOCTYPE ${doc.doctype.name}>\n` : "<!DOCTYPE html>\n";
+      return {
+        fullHtml: doctype + doc.documentElement.outerHTML,
+        isFullDoc: true,
+      };
+    } catch {
+      // Fallback
+    }
+  }
+
+  return {
+    fullHtml: `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style id="${EDITOR_HELPER_STYLE_ID}">
+    ${getEditorHelperCss()}
+  </style>
+</head>
+<body contenteditable="true" data-cb-editor="true" style="margin: 0; padding: 18px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; line-height: 1.5; outline: none; min-height: 380px;">
+  ${content}
+</body>
+</html>`,
+    isFullDoc: false,
+  };
+}
+
+/**
+ * Extracts clean, valid HTML from the visual editor iframe document.
+ * Strips all temporary editor helper styles and attributes so the raw HTML code
+ * is clean, unpolluted, and keeps its original structure intact.
+ */
+export function extractCleanHtmlFromVisualDoc(doc: Document, isFullDoc: boolean): string {
+  if (!doc) return "";
+
+  if (isFullDoc) {
+    try {
+      const clone = doc.documentElement.cloneNode(true) as HTMLElement;
+
+      const helperStyle = clone.querySelector(`style#${EDITOR_HELPER_STYLE_ID}`);
+      if (helperStyle && helperStyle.parentNode) {
+        helperStyle.parentNode.removeChild(helperStyle);
+      }
+
+      const body = clone.querySelector("body");
+      if (body) {
+        body.removeAttribute("contenteditable");
+        body.removeAttribute("data-cb-editor");
+      }
+
+      const doctype = doc.doctype ? `<!DOCTYPE ${doc.doctype.name}>\n` : "<!DOCTYPE html>\n";
+      return doctype + clone.outerHTML;
+    } catch {
+      // Fallback
+    }
+  }
+
+  if (doc.body) {
+    const cloneBody = doc.body.cloneNode(true) as HTMLElement;
+    cloneBody.removeAttribute("contenteditable");
+    cloneBody.removeAttribute("data-cb-editor");
+    return cloneBody.innerHTML;
+  }
+
+  return "";
+}
+
+/**
+ * Automatically formats and indents HTML code with clean line breaks
+ * Makes minified or single-line HTML (e.g. from Canva or Stripo) human-readable, beautifully structured, and easy to edit line-by-line!
+ */
+export function formatHtmlCode(html: string): string {
+  if (!html || !html.trim()) return "";
+
+  // 1. Separate conditional comments and doctypes onto their own lines
+  let processed = html
+    .replace(/(<!DOCTYPE[^>]*>)/gi, "$1\n")
+    .replace(/(<!--\[if\b[\s\S]*?\](?:><!--)?>)/gi, "\n$1\n")
+    .replace(/(<!\[endif\]-->)/gi, "\n$1\n")
+    .replace(/(<br[^>]*>)/gi, "$1\n");
+
+  // 2. Format embedded CSS blocks inside <style> tags
+  processed = processed.replace(/<style\b([^>]*)>([\s\S]*?)<\/style>/gi, (_match, attrs, cssContent) => {
+    const cleanCss = cssContent
+      .replace(/\s+/g, " ")
+      .replace(/\{/g, " {\n  ")
+      .replace(/;/g, ";\n  ")
+      .replace(/\}/g, "\n}\n")
+      .split("\n")
+      .map((line: string) => line.trim())
+      .filter(Boolean)
+      .map((line: string) => {
+        if (line.endsWith("{") || line === "}") return line;
+        return "  " + line;
+      })
+      .join("\n");
+    return `<style${attrs}>\n${cleanCss}\n</style>`;
+  });
+
+  // 3. Break lines between HTML tags
+  processed = processed.replace(/>\s*</g, ">\n<");
+
+  // 4. Compute clean indentation line-by-line
+  const lines = processed.split("\n");
+  let formatted = "";
+  let indent = 0;
+  const tab = "  ";
+  const voidTags = /^(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)$/i;
+
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i].trim();
+    if (!rawLine) continue;
+
+    // Check if the line begins with a closing tag e.g. </div... or </style>
+    const isClosingAtStart = rawLine.match(/^<\/\s*([a-zA-Z0-9:-]+)/);
+    if (isClosingAtStart) {
+      indent = Math.max(0, indent - 1);
+    }
+
+    formatted += tab.repeat(indent) + rawLine + "\n";
+
+    // Check if this line opened tags that were not closed on the same line
+    const isComment = rawLine.startsWith("<!--") || rawLine.endsWith("-->");
+    const isDoctype = rawLine.startsWith("<!DOCTYPE") || rawLine.startsWith("<![");
+
+    if (!isComment && !isDoctype) {
+      const openMatches = rawLine.match(/<([a-zA-Z0-9:-]+)(?:[^>'"]*|".*?"|'.*?')*?>/g) || [];
+      const closeMatches = rawLine.match(/<\/([a-zA-Z0-9:-]+)>/g) || [];
+
+      let netOpens = 0;
+      for (const tag of openMatches) {
+        if (tag.startsWith("</") || tag.endsWith("/>") || tag.startsWith("<!")) continue;
+        const tagNameMatch = tag.match(/<([a-zA-Z0-9:-]+)/);
+        if (tagNameMatch) {
+          const tName = tagNameMatch[1];
+          if (!voidTags.test(tName)) {
+            netOpens++;
+          }
+        }
+      }
+      netOpens -= closeMatches.length;
+
+      if (!isClosingAtStart && netOpens > 0) {
+        indent += netOpens;
+      }
+    }
+  }
+
+  return formatted.trim();
+}
+
+
+
 

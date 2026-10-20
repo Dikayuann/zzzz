@@ -10,6 +10,8 @@ export interface SocialBlockEditorProps {
   onInstagramUrlChange?: (val: string) => void;
   whatsappUrl?: string;
   onWhatsappUrlChange?: (val: string) => void;
+  footerAddress?: string;
+  onFooterAddressChange?: (val: string) => void;
 }
 
 export const SocialBlockEditor: React.FC<SocialBlockEditorProps> = ({
@@ -21,6 +23,8 @@ export const SocialBlockEditor: React.FC<SocialBlockEditorProps> = ({
   onInstagramUrlChange,
   whatsappUrl = "https://wa.me/6281234567890",
   onWhatsappUrlChange,
+  footerAddress = "",
+  onFooterAddressChange,
 }) => {
   return (
     <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-2xs space-y-3">
@@ -85,6 +89,18 @@ export const SocialBlockEditor: React.FC<SocialBlockEditorProps> = ({
               value={whatsappUrl}
               onChange={(e) => onWhatsappUrlChange?.(e.target.value)}
               placeholder="https://wa.me/62812..."
+              className="w-full h-7 px-2 rounded-lg border border-slate-200 text-xs text-slate-800"
+            />
+          </div>
+          <div className="sm:col-span-3">
+            <label className="text-[10px] font-medium text-slate-500 block mb-0.5">
+              Alamat Pengirim / Footer Kepatuhan (Opsional)
+            </label>
+            <input
+              type="text"
+              value={footerAddress}
+              onChange={(e) => onFooterAddressChange?.(e.target.value)}
+              placeholder="Contoh: PT Nama Usaha, Jakarta, Indonesia"
               className="w-full h-7 px-2 rounded-lg border border-slate-200 text-xs text-slate-800"
             />
           </div>

@@ -13,12 +13,14 @@ import {
   ChevronDown,
   Monitor,
   Smartphone,
-  Code2,
   Copy,
   Check,
   CheckCheck,
   Mail,
   SlidersHorizontal,
+  ZoomIn,
+  Maximize2,
+  X,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -67,7 +69,7 @@ interface TemplateLivePreviewProps {
 }
 
 export const TemplateLivePreview: React.FC<TemplateLivePreviewProps> = ({
-  channel,
+  channel: rawChannel,
   subject,
   preheader,
   content,
@@ -88,13 +90,72 @@ export const TemplateLivePreview: React.FC<TemplateLivePreviewProps> = ({
   websiteUrl = "https://acmecorp.co",
   instagramUrl = "https://instagram.com/acmecorp",
   whatsappUrl = "https://wa.me/6281234567890",
-  footerAddress = "PT Acme Digital Nusantara, Jakarta, Indonesia",
+  footerAddress = "",
   mediaUrl = "",
 }) => {
+  const channel: TemplateChannel =
+    rawChannel === "whatsapp" || rawChannel === "telegram" ? rawChannel : "email";
+
   const [deviceView, setDeviceView] = useState<"desktop" | "mobile">("desktop");
-  const [previewMode, setPreviewMode] = useState<"visual" | "html">("visual");
+  const [zoomMode, setZoomMode] = useState<"fit" | "100" | "85" | "75" | "50">("fit");
+  const [isFullScreenModalOpen, setIsFullScreenModalOpen] = useState(false);
   const [copiedHtml, setCopiedHtml] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const fullScreenIframeRef = useRef<HTMLIFrameElement>(null);
+  const previewViewportRef = useRef<HTMLDivElement>(null);
+  const [viewportWidth, setViewportWidth] = useState<number>(600);
+  const [iframeHeight, setIframeHeight] = useState<number>(480);
+
+  // Measure available container width responsively to auto-scale preview
+  useEffect(() => {
+    const el = previewViewportRef.current;
+    if (!el) return;
+
+    const updateWidth = () => {
+      if (el && el.clientWidth > 0) {
+        setViewportWidth(el.clientWidth);
+      }
+    };
+
+    updateWidth();
+
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.width > 0) {
+          setViewportWidth(entry.contentRect.width);
+        }
+      }
+    });
+
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [channel, deviceView]);
+
+  // Base canvas width: 600px standard email desktop, 375px mobile phone
+  const baseWidth = deviceView === "mobile" ? 375 : 600;
+
+  // Compute fluid scale factor so desktop email never clips or overflows on any screen
+  const scale = useMemo(() => {
+    if (deviceView === "mobile") {
+      const available = Math.max(260, viewportWidth - 24);
+      if (available < 375) {
+        return Math.max(0.5, Number((available / 375).toFixed(3)));
+      }
+      return 1;
+    }
+
+    if (zoomMode === "100") return 1;
+    if (zoomMode === "85") return 0.85;
+    if (zoomMode === "75") return 0.75;
+    if (zoomMode === "50") return 0.5;
+
+    // "fit" mode (Default): auto-scale down smoothly if viewport is narrower than 600px email
+    const available = Math.max(280, viewportWidth - 32);
+    if (available >= baseWidth) {
+      return 1;
+    }
+    return Math.max(0.4, Number((available / baseWidth).toFixed(3)));
+  }, [zoomMode, viewportWidth, baseWidth, deviceView]);
 
   // Custom Recipient Test Simulation Modal State
   const [isCustomRecipientModalOpen, setIsCustomRecipientModalOpen] = useState(false);
@@ -189,34 +250,125 @@ export const TemplateLivePreview: React.FC<TemplateLivePreviewProps> = ({
 
   const isContentEmpty = !content || !content.trim();
 
-  // Auto-resize iframe height based on rendered content
-  useEffect(() => {
-    if (previewMode !== "visual" || channel !== "email" || isContentEmpty) return;
+  // Measure actual rendered email content height without artificial runaway growth or excess blanks
+  const measureActualEmailHeight = (doc: Document): number => {
+    if (!doc || !doc.body) return 380;
 
+    let maxBottom = 0;
+    // Check all rendered elements inside body
+    const elements = doc.body.querySelectorAll(
+      "table, div, p, section, article, h1, h2, h3, h4, h5, h6, img, ul, ol, form"
+    );
+    elements.forEach((el) => {
+      const htmlEl = el as HTMLElement;
+      if (
+        htmlEl.style.display === "none" ||
+        htmlEl.style.visibility === "hidden" ||
+        htmlEl.style.maxHeight === "0px" ||
+        htmlEl.style.maxHeight === "0" ||
+        htmlEl.getAttribute("aria-hidden") === "true"
+      ) {
+        return;
+      }
+      const rect = htmlEl.getBoundingClientRect();
+      if (rect.height > 0) {
+        const bottom = (htmlEl.offsetTop || 0) + (rect.height || htmlEl.offsetHeight || 0);
+        if (bottom > maxBottom) {
+          maxBottom = bottom;
+        }
+      }
+    });
+
+    if (maxBottom > 40) {
+      return Math.ceil(maxBottom + 16);
+    }
+
+    const bodyH = doc.body.scrollHeight || 0;
+    return Math.max(bodyH, 240);
+  };
+
+  // Attach safe link interceptor inside preview iframes to prevent accidental page navigation
+  const attachPreviewLinkInterceptor = (doc: Document) => {
+    if (!doc || !doc.body) return;
+    doc.body.addEventListener("click", (e: MouseEvent) => {
+      const target = (e.target as HTMLElement).closest("a, button[data-href]");
+      if (target) {
+        e.preventDefault();
+        e.stopPropagation();
+        const href = target.getAttribute("href") || target.getAttribute("data-href") || "";
+        if (href && href !== "#" && href !== "#unsubscribe") {
+          toast.info(`Tautan pratinjau: ${href}`, {
+            description: "Navigasi dinonaktifkan dalam mode pratinjau template.",
+            duration: 2500,
+          });
+        }
+      }
+    });
+  };
+
+  // Instant real-time synchronous update into preview iframe
+  useEffect(() => {
+    if (channel !== "email") return;
     const iframe = iframeRef.current;
     if (!iframe) return;
 
-    const handleLoad = () => {
-      try {
-        const doc = iframe.contentDocument || iframe.contentWindow?.document;
-        if (doc && doc.body) {
-          const height = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight, 380);
-          iframe.style.height = `${height + 20}px`;
-        }
-      } catch {
-        // Fallback default
-        iframe.style.height = "520px";
+    try {
+      const doc = iframe.contentDocument || iframe.contentWindow?.document;
+      if (doc) {
+        doc.open();
+        doc.write(
+          compiledEmailHtml ||
+            "<!DOCTYPE html><html><body style='margin:0;padding:24px;font-family:sans-serif;color:#94a3b8;text-align:center;'>(Konten email masih kosong)</body></html>"
+        );
+        doc.close();
+
+        attachPreviewLinkInterceptor(doc);
+
+        const updateHeight = () => {
+          try {
+            const measured = measureActualEmailHeight(doc);
+            setIframeHeight(measured);
+          } catch {}
+        };
+        updateHeight();
+        setTimeout(updateHeight, 150);
       }
-    };
+    } catch (err) {
+      console.warn("Iframe write error:", err);
+    }
+  }, [compiledEmailHtml, channel, deviceView]);
 
-    iframe.addEventListener("load", handleLoad);
-    // Also trigger immediately in case already loaded
-    handleLoad();
+  // Instant real-time update into fullscreen modal iframe
+  useEffect(() => {
+    if (!isFullScreenModalOpen || channel !== "email") return;
+    const iframe = fullScreenIframeRef.current;
+    if (!iframe) return;
 
-    return () => {
-      iframe.removeEventListener("load", handleLoad);
-    };
-  }, [compiledEmailHtml, deviceView, previewMode, channel, isContentEmpty]);
+    try {
+      const doc = iframe.contentDocument || iframe.contentWindow?.document;
+      if (doc) {
+        doc.open();
+        doc.write(
+          compiledEmailHtml ||
+            "<!DOCTYPE html><html><body style='margin:0;padding:24px;font-family:sans-serif;color:#94a3b8;text-align:center;'>(Konten email masih kosong)</body></html>"
+        );
+        doc.close();
+
+        attachPreviewLinkInterceptor(doc);
+
+        const updateHeight = () => {
+          try {
+            const measured = measureActualEmailHeight(doc);
+            setIframeHeight(measured);
+          } catch {}
+        };
+        updateHeight();
+        setTimeout(updateHeight, 150);
+      }
+    } catch (err) {
+      console.warn("Fullscreen iframe write error:", err);
+    }
+  }, [compiledEmailHtml, isFullScreenModalOpen, deviceView, channel]);
 
   const handleCopyHtml = () => {
     if (!compiledEmailHtml) {
@@ -235,6 +387,29 @@ export const TemplateLivePreview: React.FC<TemplateLivePreviewProps> = ({
       return (
         <p className="text-slate-400 italic text-xs">
           (Pesan WhatsApp masih kosong. Tulis pesan di panel editor...)
+        </p>
+      );
+    }
+
+    const lines = interpolateMergeTags(text, recipient, orgName).split("\n");
+    return lines.map((line, idx) => {
+      if (!line.trim()) {
+        return <div key={idx} className="h-2" />;
+      }
+      return (
+        <p key={idx} className="text-xs text-slate-800 leading-relaxed font-sans">
+          {parseWhatsAppFormatting(line)}
+        </p>
+      );
+    });
+  };
+
+  // Telegram Message Line Renderer
+  const renderTelegramLines = (text: string) => {
+    if (!text.trim()) {
+      return (
+        <p className="text-slate-400 italic text-xs">
+          (Pesan Telegram masih kosong. Tulis pesan di panel editor...)
         </p>
       );
     }
@@ -354,34 +529,6 @@ export const TemplateLivePreview: React.FC<TemplateLivePreviewProps> = ({
                 <span>Mobile</span>
               </button>
             </div>
-
-            {/* Visual vs Raw HTML Output Toggle */}
-            <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200/80 text-[11px] font-medium">
-              <button
-                type="button"
-                onClick={() => setPreviewMode("visual")}
-                className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
-                  previewMode === "visual"
-                    ? "bg-white text-slate-900 shadow-2xs font-semibold"
-                    : "text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                Visual
-              </button>
-              <button
-                type="button"
-                onClick={() => setPreviewMode("html")}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-md transition cursor-pointer ${
-                  previewMode === "html"
-                    ? "bg-white text-slate-900 shadow-2xs font-semibold"
-                    : "text-slate-500 hover:text-slate-800"
-                }`}
-                title="Lihat Kode HTML Lengkap"
-              >
-                <Code2 className="h-3 w-3" />
-                <span>HTML</span>
-              </button>
-            </div>
           </div>
         )}
       </div>
@@ -393,39 +540,102 @@ export const TemplateLivePreview: React.FC<TemplateLivePreviewProps> = ({
           <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200/70 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-slate-300" />
-                <span className="w-2.5 h-2.5 rounded-full bg-slate-300" />
-                <span className="w-2.5 h-2.5 rounded-full bg-slate-300" />
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-400/90" />
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-400/90" />
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400/90" />
               </div>
               <span className="text-[11px] font-semibold text-slate-500 ml-1">
                 Pratinjau Klien Email
               </span>
             </div>
 
-            {/* Quick Action: Copy HTML */}
-            <button
-              type="button"
-              onClick={handleCopyHtml}
-              className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 hover:text-slate-900 transition cursor-pointer"
-              title="Salin kode HTML email"
-            >
-              {copiedHtml ? (
-                <>
-                  <Check className="h-3 w-3 text-emerald-600" />
-                  <span className="text-emerald-600">Disalin</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="h-3 w-3" />
-                  <span>Salin HTML</span>
-                </>
+            <div className="flex items-center gap-2">
+              {/* Zoom Dropdown for Desktop View */}
+              {channel === "email" && deviceView === "desktop" && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600 hover:text-slate-900 bg-white px-2 py-0.5 rounded-md border border-slate-200/90 shadow-2xs transition cursor-pointer"
+                      title="Skala Tampilan Email Desktop"
+                    >
+                      <ZoomIn className="h-3 w-3 text-slate-500" />
+                      <span>{zoomMode === "fit" ? `Paskan (${Math.round(scale * 100)}%)` : `${zoomMode}%`}</span>
+                      <ChevronDown className="h-2.5 w-2.5 text-slate-400" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-40 rounded-xl p-1 text-xs">
+                    <DropdownMenuItem
+                      onClick={() => setZoomMode("fit")}
+                      className={`cursor-pointer ${zoomMode === "fit" ? "font-bold bg-slate-100 text-slate-900" : ""}`}
+                    >
+                      Paskan Layar (Auto)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setZoomMode("100")}
+                      className={`cursor-pointer ${zoomMode === "100" ? "font-bold bg-slate-100 text-slate-900" : ""}`}
+                    >
+                      100% (Ukuran Asli)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setZoomMode("85")}
+                      className={`cursor-pointer ${zoomMode === "85" ? "font-bold bg-slate-100 text-slate-900" : ""}`}
+                    >
+                      85%
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setZoomMode("75")}
+                      className={`cursor-pointer ${zoomMode === "75" ? "font-bold bg-slate-100 text-slate-900" : ""}`}
+                    >
+                      75%
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setZoomMode("50")}
+                      className={`cursor-pointer ${zoomMode === "50" ? "font-bold bg-slate-100 text-slate-900" : ""}`}
+                    >
+                      50%
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
-            </button>
+
+              {/* Fullscreen Preview Button */}
+              {channel === "email" && (
+                <button
+                  type="button"
+                  onClick={() => setIsFullScreenModalOpen(true)}
+                  className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600 hover:text-slate-900 bg-white px-2 py-0.5 rounded-md border border-slate-200/90 shadow-2xs transition cursor-pointer"
+                  title="Lihat Pratinjau Layar Penuh"
+                >
+                  <Maximize2 className="h-3 w-3 text-slate-500" />
+                  <span className="hidden sm:inline">Layar Penuh</span>
+                </button>
+              )}
+
+              {/* Quick Action: Copy HTML */}
+              <button
+                type="button"
+                onClick={handleCopyHtml}
+                className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 hover:text-slate-900 transition cursor-pointer ml-0.5"
+                title="Salin kode HTML email"
+              >
+                {copiedHtml ? (
+                  <>
+                    <Check className="h-3 w-3 text-emerald-600" />
+                    <span className="text-emerald-600">Disalin</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-3 w-3" />
+                    <span>Salin HTML</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
-          {previewMode === "visual" ? (
-            <div>
-              {/* 2. REALISTIC EMAIL METADATA HEADER */}
+          <div>
+            {/* 2. REALISTIC EMAIL METADATA HEADER */}
               <div className="p-4 sm:p-5 border-b border-slate-100 bg-white">
                 {/* Subject Line */}
                 <h1 className="text-base sm:text-lg font-bold text-slate-900 leading-snug tracking-tight">
@@ -489,7 +699,8 @@ export const TemplateLivePreview: React.FC<TemplateLivePreviewProps> = ({
 
               {/* 3. EMAIL BODY VIEWPORT (DESKTOP OR MOBILE SIMULATOR) */}
               <div
-                className={`p-4 sm:p-6 bg-[#f8fafc]/80 flex justify-center overflow-x-auto min-h-[380px] transition-all`}
+                ref={previewViewportRef}
+                className="p-3 sm:p-5 bg-[#f8fafc]/90 overflow-x-auto min-h-[380px] transition-all flex flex-col items-center"
               >
                 {isContentEmpty ? (
                   /* CLEAN EMPTY STATE */
@@ -504,43 +715,83 @@ export const TemplateLivePreview: React.FC<TemplateLivePreviewProps> = ({
                       Mulai tulis konten di editor sebelah kiri atau klik <strong>"Pilih Template"</strong> di atas untuk memuat desain siap pakai.
                     </p>
                   </div>
-                ) : (
-                  /* RENDERED EMAIL VIEWPORT */
-                  <div
-                    style={{
-                      width: deviceView === "mobile" ? "375px" : "100%",
-                      maxWidth: deviceView === "mobile" ? "375px" : "620px",
-                    }}
-                    className={`transition-all duration-200 ${
-                      deviceView === "mobile"
-                        ? "rounded-2xl border-2 border-slate-300 shadow-md bg-white overflow-hidden"
-                        : "w-full"
-                    }`}
-                  >
-                    {deviceView === "mobile" && (
-                      <div className="bg-slate-100 py-1.5 px-4 text-center border-b border-slate-200 text-[10px] font-semibold text-slate-500">
-                        Pratinjau Mobile (375px)
+                ) : deviceView === "mobile" ? (
+                  /* CLEAN REAL MOBILE VIEWPORT (NO BEZEL, PROPORTIONATELY SCALED) */
+                  <div className="w-[375px] max-w-full mx-auto bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden flex flex-col my-1">
+                    <div className="px-3.5 py-1.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-medium select-none">
+                      <span className="flex items-center gap-1.5 text-slate-700 font-semibold text-[11px]">
+                        <Smartphone className="h-3 w-3 text-slate-500" />
+                        <span>Layar Ponsel (375px)</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400">Skala Pas (100%)</span>
+                    </div>
+
+                    <div className="bg-white overflow-y-auto max-h-[640px] flex justify-center">
+                      <div
+                        style={{
+                          width: "375px",
+                          height: `${Math.round(iframeHeight * (375 / 600))}px`,
+                          position: "relative",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <iframe
+                          ref={iframeRef}
+                          title="Email Mobile Preview"
+                          srcDoc={compiledEmailHtml}
+                          sandbox="allow-same-origin"
+                          style={{
+                            width: "600px",
+                            height: `${iframeHeight}px`,
+                            transform: `scale(${375 / 600})`,
+                            transformOrigin: "top left",
+                            position: "absolute",
+                            top: 0,
+                            left: 0,
+                          }}
+                          className="border-0 bg-transparent"
+                        />
                       </div>
-                    )}
-                    <iframe
-                      ref={iframeRef}
-                      title="Email HTML Preview"
-                      srcDoc={compiledEmailHtml}
-                      sandbox="allow-same-origin"
-                      className="w-full border-0 bg-transparent min-h-[420px]"
-                    />
+                    </div>
+                  </div>
+                ) : (
+                  /* DESKTOP VIEWPORT WITH FLUID AUTO-SCALING & INTERNAL SCROLLING */
+                  <div
+                    className="w-full max-w-full overflow-y-auto max-h-[600px] rounded-xl border border-slate-200/90 shadow-2xs bg-white flex justify-center"
+                    style={{
+                      width: `${Math.round(baseWidth * scale)}px`,
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${Math.round(baseWidth * scale)}px`,
+                        height: `${Math.round(iframeHeight * scale)}px`,
+                        position: "relative",
+                        overflow: "hidden",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <iframe
+                        ref={iframeRef}
+                        title="Email Desktop Preview"
+                        srcDoc={compiledEmailHtml}
+                        sandbox="allow-same-origin"
+                        style={{
+                          width: `${baseWidth}px`,
+                          height: `${iframeHeight}px`,
+                          transform: `scale(${scale})`,
+                          transformOrigin: "top left",
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                        }}
+                        className="border-0 bg-transparent"
+                      />
+                    </div>
                   </div>
                 )}
               </div>
             </div>
-          ) : (
-            /* RAW HTML CODE OUTPUT VIEW */
-            <div className="p-4 bg-slate-900 text-slate-100 font-mono text-xs overflow-x-auto max-h-[550px] leading-relaxed">
-              <pre className="selection:bg-indigo-600">
-                <code>{compiledEmailHtml || "(Konten email masih kosong)"}</code>
-              </pre>
-            </div>
-          )}
         </div>
       )}
 
@@ -627,8 +878,8 @@ export const TemplateLivePreview: React.FC<TemplateLivePreviewProps> = ({
                   />
                 </div>
               )}
-              <div className="text-xs text-slate-800 leading-relaxed whitespace-pre-wrap">
-                {interpolateMergeTags(content || "(Pesan Telegram masih kosong...)", recipient, orgName)}
+              <div className="text-xs text-slate-800 leading-relaxed font-sans space-y-0.5">
+                {renderTelegramLines(content)}
               </div>
               <div className="flex items-center justify-end text-[10px] text-slate-400 pt-1">
                 <span>10:30</span>
@@ -737,6 +988,162 @@ export const TemplateLivePreview: React.FC<TemplateLivePreviewProps> = ({
               </button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* FULLSCREEN EMAIL PREVIEW MODAL */}
+      <Dialog open={isFullScreenModalOpen} onOpenChange={setIsFullScreenModalOpen}>
+        <DialogContent className="max-w-5xl w-[95vw] h-[90vh] p-0 rounded-2xl border-slate-700/50 flex flex-col overflow-hidden [&>button:last-child]:hidden shadow-2xl">
+          {/* Gradient Header Navbar with prominent controls and visible X button */}
+          <div className="px-5 py-3.5 bg-gradient-to-r from-slate-950 via-slate-900 to-indigo-950 text-white flex items-center justify-between shrink-0 border-b border-indigo-500/20 shadow-md">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-lg bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center">
+                <Mail className="h-4 w-4 text-indigo-400" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold tracking-tight text-white">Pratinjau Layar Penuh</span>
+                  <span className="text-[10px] bg-indigo-500/30 text-indigo-200 px-2 py-0.5 rounded-full font-medium border border-indigo-400/20">
+                    Live Preview
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 font-normal hidden sm:block">
+                  Kepada: <span className="text-slate-300 font-medium">{recipient.name}</span> ({recipient.email})
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5">
+              {/* Device Switcher */}
+              <div className="flex items-center bg-black/40 backdrop-blur-md p-1 rounded-xl border border-white/10 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setDeviceView("desktop")}
+                  className={`px-3 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                    deviceView === "desktop"
+                      ? "bg-indigo-600 text-white font-semibold shadow-xs"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  <Monitor className="h-3.5 w-3.5" />
+                  <span>Desktop</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeviceView("mobile")}
+                  className={`px-3 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                    deviceView === "mobile"
+                      ? "bg-indigo-600 text-white font-semibold shadow-xs"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  <Smartphone className="h-3.5 w-3.5" />
+                  <span>Mobile</span>
+                </button>
+              </div>
+
+              {/* Copy HTML Button */}
+              <button
+                type="button"
+                onClick={handleCopyHtml}
+                className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition shadow-xs active:scale-95 border border-indigo-400/30"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                <span>Salin HTML</span>
+              </button>
+
+              {/* High-Contrast, Clearly Visible Close Button (X) */}
+              <button
+                type="button"
+                onClick={() => setIsFullScreenModalOpen(false)}
+                className="w-8 h-8 rounded-xl bg-white/10 hover:bg-rose-500/80 active:scale-95 text-white flex items-center justify-center transition-all cursor-pointer border border-white/15 hover:border-rose-400 ml-1 group"
+                title="Tutup (Esc)"
+                aria-label="Tutup"
+              >
+                <X className="h-4 w-4 text-white group-hover:rotate-90 transition-transform duration-150" />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 bg-slate-100 p-4 sm:p-6 overflow-y-auto flex justify-center items-center">
+            {deviceView === "mobile" ? (
+              /* CLEAN REAL MOBILE VIEWPORT IN FULLSCREEN MODAL (PROPORTIONATELY SCALED) */
+              <div className="w-[390px] max-w-full mx-auto bg-white rounded-2xl border border-slate-200 shadow-md overflow-hidden flex flex-col my-auto">
+                <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 flex items-center justify-between text-xs text-slate-500 font-medium select-none">
+                  <span className="flex items-center gap-1.5 text-slate-700 font-semibold text-xs">
+                    <Smartphone className="h-3.5 w-3.5 text-slate-500" />
+                    <span>Tampilan Mobile (390px)</span>
+                  </span>
+                  <span className="text-[11px] text-slate-400">Skala Pas (100%)</span>
+                </div>
+                <div className="bg-white overflow-y-auto max-h-[75vh] flex justify-center">
+                  <div
+                    style={{
+                      width: "390px",
+                      height: `${Math.round(iframeHeight * (390 / 600))}px`,
+                      position: "relative",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <iframe
+                      ref={fullScreenIframeRef}
+                      title="Fullscreen Mobile Preview"
+                      srcDoc={compiledEmailHtml}
+                      sandbox="allow-same-origin"
+                      style={{
+                        width: "600px",
+                        height: `${iframeHeight}px`,
+                        transform: `scale(${390 / 600})`,
+                        transformOrigin: "top left",
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                      }}
+                      className="border-0 bg-transparent"
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* DESKTOP CLIENT IN FULLSCREEN MODAL */
+              <div
+                style={{
+                  width: "640px",
+                  maxWidth: "100%",
+                }}
+                className="bg-white rounded-2xl shadow-xl border border-slate-200/90 overflow-hidden flex flex-col my-auto transition-all duration-150 max-h-[82vh]"
+              >
+                {/* Fullscreen Metadata Header */}
+                <div className="p-4 border-b border-slate-100 bg-white shrink-0">
+                  <h2 className="text-base font-bold text-slate-900 leading-snug">
+                    {compiledSubject || "(Subjek email belum diisi)"}
+                  </h2>
+                  {compiledPreheader && (
+                    <p className="text-xs text-slate-500 mt-1">{compiledPreheader}</p>
+                  )}
+                  <div className="mt-2 pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                    <span>
+                      Dari: <strong className="text-slate-800">{orgName}</strong> &lt;{senderEmail}&gt;
+                    </span>
+                    <span>
+                      Kepada: <strong className="text-slate-800">{recipient.name}</strong>
+                    </span>
+                  </div>
+                </div>
+
+                <div className="overflow-y-auto flex-1">
+                  <iframe
+                    ref={fullScreenIframeRef}
+                    title="Fullscreen Desktop Preview"
+                    srcDoc={compiledEmailHtml}
+                    sandbox="allow-same-origin"
+                    className="w-full border-0 bg-transparent"
+                    style={{ height: `${iframeHeight}px` }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>

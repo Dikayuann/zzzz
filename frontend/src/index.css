@@ -324,3 +324,101 @@
 .tiptap a:hover {
   color: #3730a3;
 }
+
+/* ==========================================================================
+   PrismJS Syntax Highlighting for Dark Code Editor (#0d1117)
+   Matches VS Code & GitHub Dark themes with zero font metric disruption
+   ========================================================================== */
+.npm__react-simple-code-editor__textarea {
+  color: #f8fafc !important;
+  caret-color: #818cf8 !important;
+  font-family: Consolas, Monaco, "Courier New", monospace !important;
+  outline: none !important;
+}
+
+/* Base text color for all HTML body content, headings, paragraphs inside editor */
+.code-editor-nowrap pre,
+.code-editor-wrap pre,
+.code-editor-nowrap,
+.code-editor-wrap {
+  color: #f8fafc !important;
+}
+
+.token.comment,
+.token.prolog,
+.token.cdata {
+  color: #8b949e !important;
+  font-style: italic !important;
+}
+
+.token.doctype {
+  color: #d2a8ff !important;
+  font-weight: 600 !important;
+}
+
+.token.punctuation {
+  color: #8b949e !important;
+}
+
+.token.tag,
+.token.tag .token.punctuation {
+  color: #7ee787 !important;
+}
+
+.token.tag .token.tag {
+  color: #79c0ff !important;
+  font-weight: 600 !important;
+}
+
+.token.attr-name {
+  color: #e3b341 !important;
+}
+
+.token.attr-value,
+.token.string {
+  color: #a5d6ff !important;
+}
+
+.token.entity,
+.token.url {
+  color: #56d4dd !important;
+}
+
+.token.boolean,
+.token.number {
+  color: #ff7b72 !important;
+}
+
+.token.property {
+  color: #79c0ff !important;
+}
+
+.token.selector {
+  color: #7ee787 !important;
+}
+
+.token.important,
+.token.atrule {
+  color: #ff7b72 !important;
+}
+
+.token.merge-tag {
+  color: #c084fc !important;
+  font-weight: 700 !important;
+  background-color: rgba(168, 85, 247, 0.18) !important;
+  border-radius: 2px !important;
+}
+
+.code-editor-nowrap pre,
+.code-editor-nowrap textarea {
+  white-space: pre !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+}
+
+.code-editor-wrap pre,
+.code-editor-wrap textarea {
+  white-space: pre-wrap !important;
+  word-break: keep-all !important;
+  overflow-wrap: break-word !important;
+}

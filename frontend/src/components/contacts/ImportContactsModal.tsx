@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   Upload,
   Download,
@@ -11,6 +11,8 @@ import {
   Users,
 } from "lucide-react";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
+import { api } from "@/lib/api";
 import {
   Dialog,
   DialogContent,
@@ -34,88 +36,267 @@ export const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
   lists,
   onImportSuccess,
 }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [importStep, setImportStep] = useState<1 | 2 | 3>(1);
-  const [importFileName, setImportFileName] = useState<string | null>("leads_webinar_september.csv");
-  const [importFileSize, setImportFileSize] = useState<string>("28.4 KB (12 kontak)");
-  const [importTargetListId, setImportTargetListId] = useState<string>("list-webinar");
+  const [importFileName, setImportFileName] = useState<string | null>(null);
+  const [importFileSize, setImportFileSize] = useState<string>("");
+  const [parsedContacts, setParsedContacts] = useState<
+    Array<{ name: string; email?: string; whatsappNumber?: string; teleChatId?: string }>
+  >([]);
+  const [importTargetListId, setImportTargetListId] = useState<string>("");
   const [isCreatingNewList, setIsCreatingNewList] = useState(false);
   const [newListName, setNewListName] = useState("");
-  const [importTags, setImportTags] = useState<string[]>(["webinar", "leads"]);
+  const [importTags, setImportTags] = useState<string[]>(["pelanggan", "leads"]);
   const [duplicateStrategy, setDuplicateStrategy] = useState<"merge" | "skip">("merge");
   const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null);
 
-  const handleExecuteImport = () => {
+  // Tag kustom & dinamis dari database
+  const [availableTags, setAvailableTags] = useState<Array<{ id?: number; name: string }>>([
+    { name: "vip" },
+    { name: "customer" },
+    { name: "webinar" },
+    { name: "trial" },
+    { name: "newsletter" },
+    { name: "leads" },
+  ]);
+  const [customTagInput, setCustomTagInput] = useState("");
+
+  // Ambil tag yang sudah pernah dibuat dari database backend
+  useEffect(() => {
+    if (open) {
+      api
+        .get("/tags")
+        .then((res) => {
+          const dbTags: Array<{ id: number; name: string }> = res.data?.data || res.data?.tags || [];
+          const defaultNames = ["vip", "customer", "webinar", "trial", "newsletter", "leads"];
+          const existingNames = new Set(dbTags.map((t) => t.name.toLowerCase()));
+
+          const combined: Array<{ id?: number; name: string }> = [...dbTags];
+          defaultNames.forEach((d) => {
+            if (!existingNames.has(d)) {
+              combined.push({ name: d });
+            }
+          });
+          setAvailableTags(combined);
+        })
+        .catch((err) => {
+          console.error("Gagal memuat tags:", err);
+        });
+    }
+  }, [open]);
+
+  const handleAddCustomTag = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const cleanTag = customTagInput.trim().replace(/^#+/, "").toLowerCase();
+    if (!cleanTag) return;
+
+    if (!availableTags.some((t) => t.name.toLowerCase() === cleanTag)) {
+      setAvailableTags((prev) => [...prev, { name: cleanTag }]);
+    }
+    if (!importTags.includes(cleanTag)) {
+      setImportTags((prev) => [...prev, cleanTag]);
+    }
+    setCustomTagInput("");
+  };
+
+  // Fungsi download file template Excel (.xlsx) kosong siap isi untuk blast
+  const handleDownloadTemplate = (e: React.MouseEvent) => {
+    e.preventDefault();
+
+    // Kolom standar blast:
+    // - nama: untuk personalisasi pesan blast ({{nama}} / {{first_name}})
+    // - whatsapp: nomor WhatsApp penerima
+    // - email: alamat email penerima
+    // (Catatan: Kontak Telegram masuk otomatis saat user menekan /start pada bot Telegram)
+    const headerRow = [["nama", "whatsapp", "email"]];
+
+    const worksheet = XLSX.utils.aoa_to_sheet(headerRow);
+
+    // Atur lebar kolom agar rapi saat dibuka di Microsoft Excel
+    worksheet["!cols"] = [
+      { wch: 25 }, // nama
+      { wch: 22 }, // whatsapp
+      { wch: 30 }, // email
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Template Kontak Blast");
+
+    XLSX.writeFile(workbook, "template_kontak_blast.xlsx");
+    toast.success("Template Excel (.xlsx) kosong berhasil diunduh!");
+  };
+
+  // Fungsi membaca file Excel (.xlsx / .xls) maupun CSV dari komputer user
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const lowerName = file.name.toLowerCase();
+    const isExcel = lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls");
+    const isCsv = lowerName.endsWith(".csv");
+
+    if (!isExcel && !isCsv) {
+      toast.error("Mohon pilih file spreadsheet Excel (.xlsx/.xls) atau .csv");
+      return;
+    }
+
+    setImportFileName(file.name);
+    setImportFileSize(`${(file.size / 1024).toFixed(1)} KB`);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const buffer = event.target?.result;
+        if (!buffer) return;
+
+        const workbook = XLSX.read(buffer, { type: "binary" });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+
+        // Konversi sheet ke baris array
+        const rows: any[] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+        if (rows.length < 2) {
+          toast.error("File spreadsheet kosong atau hanya memiliki baris header");
+          return;
+        }
+
+        const headers = (rows[0] as string[]).map((h) =>
+          String(h || "").trim().toLowerCase()
+        );
+
+        const nameIdx = headers.findIndex((h) => h.includes("nama") || h.includes("name"));
+        const emailIdx = headers.findIndex((h) => h.includes("email"));
+        const phoneIdx = headers.findIndex(
+          (h) =>
+            h.includes("whatsapp") ||
+            h.includes("wa") ||
+            h.includes("phone") ||
+            h.includes("telepon") ||
+            h.includes("hp")
+        );
+        const teleIdx = headers.findIndex(
+          (h) => h.includes("tele") || h.includes("chat_id") || h.includes("telegram")
+        );
+
+        const parsed: Array<{ name: string; email?: string; whatsappNumber?: string; teleChatId?: string }> = [];
+
+        for (let i = 1; i < rows.length; i++) {
+          const row = rows[i] as any[];
+          if (!row || row.length === 0) continue;
+
+          const name = nameIdx !== -1 && row[nameIdx] ? String(row[nameIdx]).trim() : "";
+          const email = emailIdx !== -1 && row[emailIdx] ? String(row[emailIdx]).trim() : "";
+          const phone = phoneIdx !== -1 && row[phoneIdx] ? String(row[phoneIdx]).trim() : "";
+          const tele = teleIdx !== -1 && row[teleIdx] ? String(row[teleIdx]).trim() : "";
+
+          // Minimal nama + salah satu dari email/whatsapp
+          if (name && (email || phone)) {
+            parsed.push({
+              name,
+              email: email || undefined,
+              whatsappNumber: phone || undefined,
+              teleChatId: tele || undefined,
+            });
+          }
+        }
+
+        if (parsed.length === 0) {
+          toast.error("Tidak ada data kontak valid. Pastikan ada kolom nama dan email/whatsapp.");
+          return;
+        }
+
+        setParsedContacts(parsed);
+        setImportFileSize(`${(file.size / 1024).toFixed(1)} KB (${parsed.length} kontak terdeteksi)`);
+        toast.success(`${parsed.length} kontak berhasil dibaca dari file!`);
+      } catch (err: any) {
+        console.error("Gagal membaca file spreadsheet:", err);
+        toast.error("Gagal membaca file spreadsheet. Pastikan format file tidak rusak.");
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  // Eksekusi pengiriman data import ke Backend API
+  const handleExecuteImport = async () => {
+    if (parsedContacts.length === 0) {
+      toast.error("Belum ada kontak yang dipilih untuk diimpor");
+      return;
+    }
+
     setIsImporting(true);
-    setTimeout(() => {
-      let finalTargetListId = importTargetListId;
-      let createdListObj: ContactList | undefined;
+    setImportProgress({ current: 0, total: parsedContacts.length });
 
+    try {
+      let targetListIdNum: number | undefined;
+
+      // Jika user memilih buat list baru saat import
       if (isCreatingNewList && newListName.trim()) {
-        const createdListId = `list-${Date.now()}`;
-        createdListObj = {
-          id: createdListId,
-          name: newListName.trim(),
-        };
-        finalTargetListId = createdListId;
+        const createListRes = await api.post("/lists", { name: newListName.trim() });
+        targetListIdNum = createListRes.data?.data?.id || createListRes.data?.id;
+      } else if (importTargetListId && importTargetListId !== "all") {
+        targetListIdNum = Number(importTargetListId);
       }
 
-      const finalTargetListName =
-        createdListObj?.name ||
-        lists.find((l) => l.id === importTargetListId)?.name ||
-        "Default List";
+      // Resolving atau auto-create tag ke database jika diperlukan
+      const resolvedTagIds: number[] = [];
+      if (importTags.length > 0) {
+        for (const tagName of importTags) {
+          const found = availableTags.find(
+            (t) => t.name.toLowerCase() === tagName.toLowerCase() && t.id
+          );
+          if (found && found.id) {
+            resolvedTagIds.push(found.id);
+          } else {
+            try {
+              const tagRes = await api.post("/tags", { name: tagName });
+              const newTagId = tagRes.data?.data?.id || tagRes.data?.id;
+              if (newTagId) resolvedTagIds.push(newTagId);
+            } catch {
+              // Jika tag sudah ada / konflik nama, tetap lanjutkan
+            }
+          }
+        }
+      }
 
-      const newImportedContacts: ContactItem[] = [
-        {
-          id: `ct-imp-${Date.now()}-1`,
-          name: "Farhan Maulana",
-          email: "farhan.m@gmail.com",
-          whatsapp: "+62 812-9988-7766",
-          consent: { email: true, telegram: false, whatsapp: true },
-          status: "Active",
-          joinedDate: "Hari ini (Import)",
-          tags: Array.from(new Set([...importTags, "imported"])),
-          listId: finalTargetListId,
-          initialsBg: "bg-emerald-100",
-          initialsColor: "text-emerald-700",
-        },
-        {
-          id: `ct-imp-${Date.now()}-2`,
-          name: "Anisa Putri",
-          email: "anisa.p@corp.id",
-          whatsapp: "+62 856-1122-3344",
-          consent: { email: true, telegram: true, whatsapp: true },
-          status: "Active",
-          joinedDate: "Hari ini (Import)",
-          tags: Array.from(new Set([...importTags, "imported"])),
-          listId: finalTargetListId,
-          initialsBg: "bg-indigo-100",
-          initialsColor: "text-indigo-700",
-        },
-        {
-          id: `ct-imp-${Date.now()}-3`,
-          name: "Reza Ramadhan",
-          email: "reza.r@startup.io",
-          whatsapp: "+62 878-3344-5566",
-          consent: { email: true, telegram: false, whatsapp: true },
-          status: "Active",
-          joinedDate: "Hari ini (Import)",
-          tags: Array.from(new Set([...importTags, "imported"])),
-          listId: finalTargetListId,
-          initialsBg: "bg-sky-100",
-          initialsColor: "text-sky-700",
-        },
-      ];
+      // Chunking batch per 250 kontak agar cepat dan ada progress bar real-time
+      const CHUNK_SIZE = 250;
+      let totalImported = 0;
 
-      onImportSuccess(newImportedContacts, createdListObj);
-      setIsImporting(false);
+      for (let i = 0; i < parsedContacts.length; i += CHUNK_SIZE) {
+        const chunk = parsedContacts.slice(i, i + CHUNK_SIZE);
+        const payload: any = {
+          contacts: chunk,
+          listId: !isNaN(targetListIdNum as number) ? targetListIdNum : undefined,
+          tagsIds: resolvedTagIds.length > 0 ? resolvedTagIds : undefined,
+          duplicateStrategy: duplicateStrategy === "merge" ? "update" : "skip",
+        };
+
+        const res = await api.post("/contacts/import", payload);
+        const importedData = res.data?.data;
+        totalImported += (importedData?.importedCount ?? chunk.length);
+
+        const currentCount = Math.min(i + chunk.length, parsedContacts.length);
+        setImportProgress({
+          current: currentCount,
+          total: parsedContacts.length,
+        });
+      }
+
+      toast.success(`${totalImported || parsedContacts.length} kontak berhasil diimpor ke database!`);
+      onImportSuccess([], undefined);
       onOpenChange(false);
       setImportStep(1);
-      toast.success(`12 kontak berhasil diimpor ke List "${finalTargetListName}"!`, {
-        description: `Tag diterapkan: [${importTags.join(", ")}] • Strategi: ${
-          duplicateStrategy === "merge" ? "Update & Merge" : "Skip Duplicate"
-        }`,
-      });
-    }, 800);
+      setParsedContacts([]);
+      setImportFileName(null);
+      setImportProgress(null);
+    } catch (err: any) {
+      console.error("Gagal import kontak:", err);
+      toast.error(err.response?.data?.message || "Gagal melakukan import kontak");
+    } finally {
+      setIsImporting(false);
+      setImportProgress(null);
+    }
   };
 
   return (
@@ -177,12 +358,15 @@ export const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
         {/* STEP 1: FILE UPLOAD */}
         {importStep === 1 && (
           <div className="space-y-4 pt-2 animate-in fade-in duration-150">
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".xlsx, .xls, .csv"
+              onChange={handleFileChange}
+              className="hidden"
+            />
             <div
-              onClick={() => {
-                setImportFileName("leads_webinar_september.csv");
-                setImportFileSize("28.4 KB (12 kontak terdeteksi)");
-                toast.success("File sampel 'leads_webinar_september.csv' dipilih!");
-              }}
+              onClick={() => fileInputRef.current?.click()}
               className="border-2 border-dashed border-sky-300 hover:border-sky-500 rounded-2xl p-6 text-center bg-sky-50/20 hover:bg-sky-50/40 transition cursor-pointer"
             >
               <Upload className="h-9 w-9 text-sky-500 mx-auto mb-2" />
@@ -190,25 +374,22 @@ export const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
                 {importFileName ? (
                   <span className="text-sky-700 font-bold">{importFileName}</span>
                 ) : (
-                  "Klik untuk memilih file spreadsheet (.CSV atau .XLSX)"
+                  "Klik untuk memilih file spreadsheet (.xlsx / .csv)"
                 )}
               </p>
               <p className="text-[11px] text-slate-500 mt-1 font-mono">
-                {importFileSize || "Mendukung format .CSV, .XLSX (Maks. 10.000 kontak)"}
+                {importFileSize || "Mendukung format Excel (.xlsx, .xls) & .CSV (Maks. 1.000 kontak)"}
               </p>
             </div>
 
             <div className="flex items-center justify-between text-xs text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-100">
-              <span className="text-[11px]">Format template standar:</span>
+              <span className="text-[11px]">Format template kontak siap isi:</span>
               <a
                 href="#"
-                onClick={(e) => {
-                  e.preventDefault();
-                  toast.info("Mengunduh template_kontak_broadcast.csv...");
-                }}
-                className="font-bold text-sky-600 hover:underline flex items-center gap-1 text-[11px]"
+                onClick={handleDownloadTemplate}
+                className="font-bold text-sky-600 hover:underline flex items-center gap-1.5 text-[11px]"
               >
-                <Download className="h-3 w-3" /> Unduh Template CSV
+                <Download className="h-3.5 w-3.5" /> Unduh Template Excel (.xlsx) Kosong
               </a>
             </div>
 
@@ -222,8 +403,9 @@ export const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
               </button>
               <button
                 type="button"
+                disabled={parsedContacts.length === 0}
                 onClick={() => setImportStep(2)}
-                className="px-4 py-2 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-xs font-semibold text-white shadow-sm transition cursor-pointer flex items-center gap-1.5"
+                className="px-4 py-2 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-xs font-semibold text-white shadow-sm transition cursor-pointer flex items-center gap-1.5 disabled:opacity-40"
               >
                 <span>Lanjut: Pengelompokan</span>
                 <ArrowRight className="h-3.5 w-3.5" />
@@ -256,6 +438,7 @@ export const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
                   onChange={(e) => setImportTargetListId(e.target.value)}
                   className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 font-semibold focus:outline-none focus:border-sky-500"
                 >
+                  <option value="">Semua Kontak (Tanpa Folder List)</option>
                   {lists
                     .filter((l) => l.id !== "all")
                     .map((l) => (
@@ -269,7 +452,7 @@ export const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
                   type="text"
                   value={newListName}
                   onChange={(e) => setNewListName(e.target.value)}
-                  placeholder="Ketik nama list baru (cth: Leads Expo Surabaya 2026)"
+                  placeholder="Ketik nama list baru (cth: Leads Promo Lebaran)"
                   className="w-full h-10 px-3 rounded-xl border border-sky-400 bg-white text-xs text-slate-800 focus:outline-none"
                   autoFocus
                 />
@@ -284,30 +467,59 @@ export const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
                 <Tag className="h-3.5 w-3.5 text-sky-600" />
                 Tempelkan Tag Otomatis (Label Segmen)
               </label>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {["vip", "customer", "webinar", "trial", "newsletter", "leads"].map((t) => {
-                  const isSelected = importTags.includes(t);
+              <div className="flex items-center gap-1.5 flex-wrap max-h-36 overflow-y-auto p-0.5">
+                {availableTags.map((t) => {
+                  const tagLower = t.name.toLowerCase();
+                  const isSelected = importTags.includes(tagLower);
                   return (
                     <button
-                      key={t}
+                      key={t.name}
                       type="button"
                       onClick={() => {
                         if (isSelected) {
-                          setImportTags((prev) => prev.filter((item) => item !== t));
+                          setImportTags((prev) => prev.filter((item) => item !== tagLower));
                         } else {
-                          setImportTags((prev) => [...prev, t]);
+                          setImportTags((prev) => [...prev, tagLower]);
                         }
                       }}
-                      className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                      className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer select-none ${
                         isSelected
-                          ? "bg-sky-600 text-white"
+                          ? "bg-sky-600 text-white shadow-2xs"
                           : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                       }`}
                     >
-                      {isSelected ? `✓ #${t}` : `+ #${t}`}
+                      {isSelected ? `✓ #${t.name}` : `+ #${t.name}`}
                     </button>
                   );
                 })}
+              </div>
+
+              {/* Input Tambah Tag Kustom */}
+              <div className="flex items-center gap-2 pt-1">
+                <div className="relative flex-1">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">#</span>
+                  <input
+                    type="text"
+                    value={customTagInput}
+                    onChange={(e) => setCustomTagInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleAddCustomTag();
+                      }
+                    }}
+                    placeholder="Buat tag kustom baru (cth: promo-oktober, hot-leads)..."
+                    className="w-full h-8 pl-7 pr-3 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-sky-500 placeholder:text-slate-400"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleAddCustomTag()}
+                  disabled={!customTagInput.trim()}
+                  className="px-3 h-8 rounded-xl bg-slate-100 hover:bg-sky-50 text-slate-700 hover:text-sky-700 border border-slate-200 text-xs font-semibold transition cursor-pointer disabled:opacity-40"
+                >
+                  + Tambah Tag
+                </button>
               </div>
             </div>
 
@@ -373,49 +585,48 @@ export const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
           <div className="space-y-4 pt-2 animate-in fade-in duration-150">
             <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 text-xs space-y-1.5">
               <span className="font-bold text-slate-800 block text-[11px] uppercase tracking-wider">
-                Pemetaan Kolom Otomatis:
+                Pemetaan Kolom Kontak Blast:
               </span>
               <div className="grid grid-cols-3 gap-2 text-[11px] font-mono">
                 <div className="bg-white p-2 rounded-lg border border-slate-200/80">
-                  <span className="text-slate-400 block text-[10px]">Kolom CSV</span>
-                  <strong>Full Name</strong> ➔ <span className="text-emerald-600 font-bold">Nama</span>
+                  <span className="text-slate-400 block text-[10px]">Kolom File</span>
+                  <strong>nama</strong> ➔ <span className="text-emerald-600 font-bold">Nama</span>
                 </div>
                 <div className="bg-white p-2 rounded-lg border border-slate-200/80">
-                  <span className="text-slate-400 block text-[10px]">Kolom CSV</span>
-                  <strong>Email Address</strong> ➔ <span className="text-emerald-600 font-bold">Email</span>
+                  <span className="text-slate-400 block text-[10px]">Kolom File</span>
+                  <strong>whatsapp</strong> ➔ <span className="text-emerald-600 font-bold">WhatsApp</span>
                 </div>
                 <div className="bg-white p-2 rounded-lg border border-slate-200/80">
-                  <span className="text-slate-400 block text-[10px]">Kolom CSV</span>
-                  <strong>WhatsApp Phone</strong> ➔ <span className="text-emerald-600 font-bold">WhatsApp</span>
+                  <span className="text-slate-400 block text-[10px]">Kolom File</span>
+                  <strong>email</strong> ➔ <span className="text-emerald-600 font-bold">Email</span>
                 </div>
               </div>
             </div>
 
-            <div className="border border-slate-200 rounded-2xl overflow-hidden">
+            <div className="border border-slate-200 rounded-2xl overflow-hidden max-h-52 overflow-y-auto">
               <table className="w-full text-left text-xs">
-                <thead className="bg-slate-100 text-[10px] text-slate-500 uppercase font-bold">
+                <thead className="bg-slate-100 text-[10px] text-slate-500 uppercase font-bold sticky top-0">
                   <tr>
                     <th className="py-2 px-3">Nama</th>
-                    <th className="py-2 px-3">Email</th>
                     <th className="py-2 px-3">WhatsApp</th>
+                    <th className="py-2 px-3">Email</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-[11px]">
-                  <tr>
-                    <td className="py-2 px-3 font-semibold text-slate-800">Farhan Maulana</td>
-                    <td className="py-2 px-3 text-slate-600">farhan.m@gmail.com</td>
-                    <td className="py-2 px-3 text-slate-600">+62 812-9988-7766</td>
-                  </tr>
-                  <tr>
-                    <td className="py-2 px-3 font-semibold text-slate-800">Anisa Putri</td>
-                    <td className="py-2 px-3 text-slate-600">anisa.p@corp.id</td>
-                    <td className="py-2 px-3 text-slate-600">+62 856-1122-3344</td>
-                  </tr>
-                  <tr>
-                    <td className="py-2 px-3 font-semibold text-slate-800">Reza Ramadhan</td>
-                    <td className="py-2 px-3 text-slate-600">reza.r@startup.io</td>
-                    <td className="py-2 px-3 text-slate-600">+62 878-3344-5566</td>
-                  </tr>
+                  {parsedContacts.slice(0, 5).map((c, idx) => (
+                    <tr key={idx}>
+                      <td className="py-2 px-3 font-semibold text-slate-800">{c.name}</td>
+                      <td className="py-2 px-3 text-slate-600">{c.whatsappNumber || "-"}</td>
+                      <td className="py-2 px-3 text-slate-600">{c.email || "-"}</td>
+                    </tr>
+                  ))}
+                  {parsedContacts.length > 5 && (
+                    <tr>
+                      <td colSpan={3} className="py-2 px-3 text-center text-[10px] text-slate-400 italic bg-slate-50">
+                        ... dan {parsedContacts.length - 5} kontak lainnya dalam file ini
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -426,12 +637,12 @@ export const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
                 <strong className="font-bold">
                   {isCreatingNewList && newListName
                     ? newListName
-                    : lists.find((l) => l.id === importTargetListId)?.name}
+                    : lists.find((l) => l.id === importTargetListId)?.name || "Semua Kontak (Tanpa Folder)"}
                 </strong>
               </div>
               <div className="flex items-center justify-between">
-                <span>Tag yang Ditempel:</span>
-                <strong className="font-bold">#{importTags.join(", #")}</strong>
+                <span>Total Kontak:</span>
+                <strong className="font-bold">{parsedContacts.length} kontak</strong>
               </div>
               <div className="flex items-center justify-between">
                 <span>Penanganan Duplikat:</span>
@@ -441,25 +652,51 @@ export const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
               </div>
             </div>
 
+            {/* PROGRESS BAR SAAT PROSES IMPORT */}
+            {isImporting && importProgress && (
+              <div className="p-3.5 bg-sky-50/70 rounded-2xl border border-sky-100 space-y-2 animate-in fade-in">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-sky-900 flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-sky-500 animate-pulse" />
+                    Memproses & Menyimpan Kontak...
+                  </span>
+                  <span className="font-mono font-bold text-sky-700">
+                    {importProgress.current} / {importProgress.total} ({Math.round((importProgress.current / importProgress.total) * 100)}%)
+                  </span>
+                </div>
+                <div className="w-full bg-sky-100 rounded-full h-2 overflow-hidden">
+                  <div
+                    className="bg-sky-600 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${Math.round((importProgress.current / importProgress.total) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
             <DialogFooter className="pt-2 gap-2">
               <button
                 type="button"
+                disabled={isImporting}
                 onClick={() => setImportStep(2)}
-                className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer flex items-center gap-1.5"
+                className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
               >
                 <ArrowLeft className="h-3.5 w-3.5" />
                 <span>Kembali</span>
               </button>
               <button
                 type="button"
-                disabled={isImporting}
+                disabled={isImporting || parsedContacts.length === 0}
                 onClick={handleExecuteImport}
                 className="px-5 py-2 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-xs font-semibold text-white shadow-sm transition cursor-pointer disabled:opacity-50 flex items-center gap-2"
               >
                 {isImporting ? (
                   <>
                     <span className="h-3 w-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Mengimpor...
+                    <span>
+                      {importProgress && importProgress.total > 0
+                        ? `Mengimpor ${Math.round((importProgress.current / importProgress.total) * 100)}%...`
+                        : "Mengimpor..."}
+                    </span>
                   </>
                 ) : (
                   <>

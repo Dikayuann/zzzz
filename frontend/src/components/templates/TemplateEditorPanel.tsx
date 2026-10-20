@@ -1,4 +1,9 @@
 import React, { useRef, useState, useEffect, useMemo } from "react";
+import EditorComponent from "react-simple-code-editor";
+
+// Safe ESM/CJS interop for react-simple-code-editor across Vite dev & production
+const Editor: any = (EditorComponent as any).default || EditorComponent;
+
 import type { TemplateChannel, ToolbarAction } from "@/types/template";
 import { TemplateEditorToolbar } from "./TemplateEditorToolbar";
 import {
@@ -7,12 +12,17 @@ import {
   insertHtmlSnippetAtCursor,
   isRawHtml,
   extractTextBlocksFromHtml,
-  replaceTextInHtml,
+  updateTextBlockByIndex,
+  updateCohesiveBlockInDoc,
+  prepareHtmlForVisualEditor,
+  extractCleanHtmlFromVisualDoc,
+  isFullHtmlDoc,
+  formatHtmlCode,
   type ExtractedTextBlock,
 } from "@/utils/templateParser";
 import {
-  highlightHtmlCode,
   DEFAULT_GRAY_IMAGE_PLACEHOLDER,
+  highlightHtmlCode,
 } from "@/utils/htmlHighlighter";
 import {
   Code2,
@@ -77,6 +87,8 @@ interface TemplateEditorPanelProps {
   onInstagramUrlChange?: (val: string) => void;
   whatsappUrl?: string;
   onWhatsappUrlChange?: (val: string) => void;
+  footerAddress?: string;
+  onFooterAddressChange?: (val: string) => void;
   mediaUrl?: string;
   onMediaUrlChange?: (val: string) => void;
 }
@@ -88,12 +100,14 @@ const QUICK_MERGE_TAGS = [
   "{{diskon}}",
   "{{org_name}}",
   "{{unsubscribe_link}}",
+  "[nama]",
+  "{{}}",
 ];
 
 
 
 export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
-  channel,
+  channel: rawChannel,
   subject,
   onSubjectChange,
   preheader = "",
@@ -131,9 +145,14 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
   onInstagramUrlChange,
   whatsappUrl = "https://wa.me/6281234567890",
   onWhatsappUrlChange,
+  footerAddress = "",
+  onFooterAddressChange,
   mediaUrl = "",
   onMediaUrlChange,
 }) => {
+  const channel: TemplateChannel =
+    rawChannel === "whatsapp" || rawChannel === "telegram" ? rawChannel : "email";
+
   // Input references for smart cursor tag insertion
   const subjectInputRef = useRef<HTMLInputElement>(null);
   const preheaderInputRef = useRef<HTMLInputElement>(null);
@@ -141,6 +160,9 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
   const visualIframeRef = useRef<HTMLIFrameElement>(null);
   const visualParentScrollRef = useRef<HTMLDivElement>(null);
   const isIframeEditingRef = useRef(false);
+  const lastInternalContentRef = useRef<string>(content);
+  const isFullDocRef = useRef<boolean>(isFullHtmlDoc(content));
+  const lastIframeRangeRef = useRef<Range | null>(null);
 
   // Exact selection positions saved across blur events
   const subjectSelectionRef = useRef<{ start: number; end: number }>({
@@ -164,10 +186,19 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
   };
 
 
-  // Editor mode: Visual (Format Teks) vs Raw HTML Code
+  // Editor mode: Raw HTML Code for Email vs Visual (Format Teks)
   const [editorMode, setEditorMode] = useState<"visual" | "html">(
-    isRawHtml(content) ? "visual" : "visual"
+    channel === "email" ? "html" : "visual"
   );
+
+  // Sync editorMode when channel changes
+  useEffect(() => {
+    if (channel !== "email") {
+      setEditorMode("visual");
+    } else if (isRawHtml(content)) {
+      setEditorMode("html");
+    }
+  }, [channel]);
 
   // Sub-view inside Visual mode for HTML emails: "canvas" (WYSIWYG) vs "fields" (Daftar Teks Form)
   const [visualSubView, setVisualSubView] = useState<"canvas" | "fields">("canvas");
@@ -198,7 +229,37 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
   const [imageWidthInput, setImageWidthInput] = useState("280px");
   const [imageAlignInput, setImageAlignInput] = useState<"left" | "center" | "right">("center");
   const imageUploadInputRef = useRef<HTMLInputElement>(null);
-  const codePreRef = useRef<HTMLPreElement>(null);
+
+  // HTML Code Editor: Word Wrap Toggle (Soft wrap vs Horizontal scrolling)
+  const [wordWrap, setWordWrap] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem("campaignblast_word_wrap");
+      if (saved !== null) return saved === "true";
+    } catch {}
+    return false; // Default: horizontal scroll / wrap off for pixel-perfect line numbers
+  });
+
+  const handleToggleWordWrap = () => {
+    setWordWrap((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("campaignblast_word_wrap", String(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  // Cursor Tracking (Line & Column)
+  const [cursorPos, setCursorPos] = useState<{ line: number; col: number }>({ line: 1, col: 1 });
+  const updateCursorPos = (el: HTMLTextAreaElement | null) => {
+    if (!el) return;
+    const selStart = el.selectionStart || 0;
+    const textBefore = el.value.substring(0, selStart);
+    const lines = textBefore.split("\n");
+    const line = lines.length;
+    const col = (lines[lines.length - 1]?.length || 0) + 1;
+    setCursorPos({ line, col });
+  };
 
   // Adjustable Editor Height (Panjang / Tinggi Editor)
   const [editorHeight, setEditorHeight] = useState<number>(() => {
@@ -222,8 +283,6 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
   const isUndoRedoAction = useRef(false);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-
-
   // Extract all text strings whenever content has HTML
   const extractedTextBlocks: ExtractedTextBlock[] = useMemo(() => {
     if (isRawHtml(content)) {
@@ -232,10 +291,26 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
     return [];
   }, [content]);
 
-  // Memoize syntax highlighted HTML to prevent heavy regex recalculations on re-render
-  const highlightedHtml = useMemo(() => {
-    return highlightHtmlCode(content || "<!-- Tulis kode HTML Email Anda di sini -->") + "\n";
+  // Total lines calculation for gutter line numbers
+  const lineCount = useMemo(() => {
+    return Math.max(1, (content || "").split("\n").length);
   }, [content]);
+
+
+
+  // Clean HTML Formatter: automatically formats & indents HTML
+  const handleFormatHtml = () => {
+    if (!content || !content.trim()) return;
+    const formatted = formatHtmlCode(content);
+    if (formatted !== content) {
+      lastInternalContentRef.current = formatted;
+      pushToHistory(formatted);
+      onContentChange(formatted);
+      toast.success("Kode HTML berhasil dirapikan dan diindentasi!");
+    } else {
+      toast.info("Kode HTML sudah rapi.");
+    }
+  };
 
   const pushToHistory = (newVal: string) => {
     if (newVal === history[historyIndex]) return;
@@ -577,12 +652,7 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
     toast.info("Placeholder abu-abu disisipkan. Klik gambar untuk mengatur gambar atau logo.");
   };
 
-  const handleCodeScroll = (e: React.UIEvent<HTMLTextAreaElement>) => {
-    if (codePreRef.current) {
-      codePreRef.current.scrollTop = e.currentTarget.scrollTop;
-      codePreRef.current.scrollLeft = e.currentTarget.scrollLeft;
-    }
-  };
+
 
   const handleToolbarAction = (action: ToolbarAction) => {
     if (action === "undo") {
@@ -600,9 +670,40 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
       return;
     }
 
-    if (!textareaRef.current) return;
-    const updated = applyToolbarAction(textareaRef.current, action, content, channel);
+    // Intercept bracket action
+    if (action === "bracket") {
+      handleInsertTag("{{nama}}");
+      return;
+    }
+
+    // Direct formatting commands in Visual Canvas iframe!
+    if (editorMode === "visual" && contentIsHtml && visualSubView === "canvas") {
+      const iframe = visualIframeRef.current;
+      const win = iframe?.contentWindow;
+      const doc = iframe?.contentDocument;
+      if (win && doc) {
+        win.focus();
+        if (action === "bold") doc.execCommand("bold");
+        else if (action === "italic") doc.execCommand("italic");
+        else if (action === "underline") doc.execCommand("underline");
+        else if (action === "strikethrough") doc.execCommand("strikeThrough");
+        else if (action === "h1") doc.execCommand("formatBlock", false, "<h1>");
+        else if (action === "h2") doc.execCommand("formatBlock", false, "<h2>");
+        else if (action === "bullet") doc.execCommand("insertUnorderedList");
+
+        const cleanHtml = extractCleanHtmlFromVisualDoc(doc, isFullDocRef.current);
+        lastInternalContentRef.current = cleanHtml;
+        pushToHistory(cleanHtml);
+        onContentChange(cleanHtml);
+        return;
+      }
+    }
+
+    const targetEl = getActiveTextarea();
+    if (!targetEl) return;
+    const updated = applyToolbarAction(targetEl, action, content, channel);
     if (updated !== content) {
+      lastInternalContentRef.current = updated;
       pushToHistory(updated);
       onContentChange(updated);
     }
@@ -610,7 +711,7 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
 
   // Dedicated Tag Insertion for Subject Line
   const handleInsertSubjectTag = (tag: string) => {
-    const formattedTag = tag.startsWith("{{") ? tag : `{{${tag}}}`;
+    const formattedTag = tag.startsWith("{{") || tag.startsWith("[") || tag.startsWith("{") ? tag : `{{${tag}}}`;
     const input = subjectInputRef.current;
     const start = input?.selectionStart ?? subjectSelectionRef.current.start ?? subject.length;
     const end = input?.selectionEnd ?? subjectSelectionRef.current.end ?? subject.length;
@@ -630,7 +731,7 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
   // Dedicated Tag Insertion for Preheader
   const handleInsertPreheaderTag = (tag: string) => {
     if (!onPreheaderChange) return;
-    const formattedTag = tag.startsWith("{{") ? tag : `{{${tag}}}`;
+    const formattedTag = tag.startsWith("{{") || tag.startsWith("[") || tag.startsWith("{") ? tag : `{{${tag}}}`;
     const input = preheaderInputRef.current;
     const start = input?.selectionStart ?? preheaderSelectionRef.current.start ?? preheader.length;
     const end = input?.selectionEnd ?? preheaderSelectionRef.current.end ?? preheader.length;
@@ -649,48 +750,65 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
 
   // Dedicated Tag Insertion for Body Content
   const handleInsertContentTag = (tag: string) => {
-    const formattedTag = tag.startsWith("{{") ? tag : `{{${tag}}}`;
+    const formattedTag = tag.startsWith("{{") || tag.startsWith("[") || tag.startsWith("{") ? tag : `{{${tag}}}`;
     setActiveTarget("content");
 
-    // If in visual iframe mode and user has a selection inside iframe
+    // If in visual iframe mode: insert directly into exact cursor range inside the iframe DOM!
     if (editorMode === "visual" && contentIsHtml && visualSubView === "canvas") {
-      const iframeWin = visualIframeRef.current?.contentWindow;
-      if (iframeWin) {
+      const iframe = visualIframeRef.current;
+      const iframeWin = iframe?.contentWindow;
+      const iframeDoc = iframe?.contentDocument;
+      if (iframeWin && iframeDoc && iframeDoc.body) {
+        let range = lastIframeRangeRef.current;
         const sel = iframeWin.getSelection();
-        if (sel && sel.rangeCount > 0 && sel.focusNode) {
-          try {
-            const range = sel.getRangeAt(0);
-            range.deleteContents();
-            const textNode = iframeWin.document.createTextNode(formattedTag);
-            range.insertNode(textNode);
-            range.setStartAfter(textNode);
-            range.setEndAfter(textNode);
-            sel.removeAllRanges();
-            sel.addRange(range);
-            isIframeEditingRef.current = true;
-            const updated = iframeWin.document.body.innerHTML;
-            pushToHistory(updated);
-            onContentChange(updated);
-            return;
-          } catch {
-            // fallback
-          }
+        if (sel && sel.rangeCount > 0 && sel.focusNode && iframeDoc.body.contains(sel.focusNode)) {
+          range = sel.getRangeAt(0);
+        }
+
+        if (range && iframeDoc.body.contains(range.commonAncestorContainer)) {
+          iframeWin.focus();
+          range.deleteContents();
+          const textNode = iframeDoc.createTextNode(formattedTag);
+          range.insertNode(textNode);
+          range.setStartAfter(textNode);
+          range.setEndAfter(textNode);
+          sel?.removeAllRanges();
+          sel?.addRange(range);
+          lastIframeRangeRef.current = range.cloneRange();
+
+          const cleanHtml = extractCleanHtmlFromVisualDoc(iframeDoc, isFullDocRef.current);
+          lastInternalContentRef.current = cleanHtml;
+          pushToHistory(cleanHtml);
+          onContentChange(cleanHtml);
+          toast.success(`Bracket ${formattedTag} berhasil disisipkan!`);
+          return;
+        } else {
+          // If no range found, append to first editable text element inside body without corrupting HTML
+          const targetEl = iframeDoc.body.querySelector("p, h1, h2, h3, div, td") || iframeDoc.body;
+          const textNode = iframeDoc.createTextNode(` ${formattedTag} `);
+          targetEl.appendChild(textNode);
+
+          const cleanHtml = extractCleanHtmlFromVisualDoc(iframeDoc, isFullDocRef.current);
+          lastInternalContentRef.current = cleanHtml;
+          pushToHistory(cleanHtml);
+          onContentChange(cleanHtml);
+          toast.success(`Bracket ${formattedTag} berhasil disisipkan!`);
+          return;
         }
       }
-      const updated = `${content} ${formattedTag}`;
-      pushToHistory(updated);
-      onContentChange(updated);
-      return;
     }
 
     if (editorMode === "html" || !isRawHtml(content)) {
-      const updated = insertTagAtCursor(textareaRef.current, content, formattedTag);
+      const targetEl = getActiveTextarea();
+      const updated = insertTagAtCursor(targetEl, content, formattedTag);
       if (updated !== content) {
+        lastInternalContentRef.current = updated;
         pushToHistory(updated);
         onContentChange(updated);
       }
     } else {
-      const updated = `${content} ${formattedTag}`;
+      const updated = `${content}\n${formattedTag}`;
+      lastInternalContentRef.current = updated;
       pushToHistory(updated);
       onContentChange(updated);
     }
@@ -711,7 +829,8 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
   };
 
   const handleInsertHtmlSnippet = (snippet: string) => {
-    const updated = insertHtmlSnippetAtCursor(textareaRef.current, content, snippet);
+    const targetEl = getActiveTextarea();
+    const updated = insertHtmlSnippetAtCursor(targetEl, content, snippet);
     if (updated !== content) {
       pushToHistory(updated);
       onContentChange(updated);
@@ -732,8 +851,38 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
     }
   }, [onRegisterInsertTagHandler, content, subject, preheader, currentActiveTarget]);
 
+  // Helper to reliably retrieve active textarea (in HTML code or plain text mode)
+  const getActiveTextarea = (): HTMLTextAreaElement | null => {
+    return (
+      textareaRef.current ||
+      (document.getElementById("template-html-code-editor") as HTMLTextAreaElement | null)
+    );
+  };
+
+  // High-performance direct change handler for HTML Editor
+  const handleEditorValueChange = (newVal: string) => {
+    lastInternalContentRef.current = newVal;
+    onContentChange(newVal);
+
+    if (isUndoRedoAction.current) {
+      isUndoRedoAction.current = false;
+      return;
+    }
+
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      pushToHistory(newVal);
+    }, 400);
+
+    const el = getActiveTextarea();
+    if (el) updateCursorPos(el);
+  };
+
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newVal = e.target.value;
+    lastInternalContentRef.current = newVal;
     onContentChange(newVal);
 
     if (isUndoRedoAction.current) {
@@ -749,32 +898,196 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
     }, 400);
   };
 
-  // Handler: Change a detected text node inside the HTML
-  const handleUpdateExtractedText = (originalText: string, newText: string) => {
-    if (originalText === newText) return;
-    const updated = replaceTextInHtml(content, originalText, newText);
+  // Handler: Change a detected text block inside the HTML (from Formulir Teks)
+  const handleUpdateExtractedText = (blockIndex: number, newText: string) => {
+    // 1. Directly update the Visual Canvas iframe DOM if available
+    const iframe = visualIframeRef.current;
+    const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
+    if (doc && doc.body) {
+      try {
+        updateCohesiveBlockInDoc(doc, blockIndex, newText);
+      } catch (err) {
+        console.warn("Could not update visual iframe DOM directly:", err);
+      }
+    }
+
+    // 2. Deterministically update the master HTML string by cohesive block index
+    const updated = updateTextBlockByIndex(content, blockIndex, newText);
     if (updated !== content) {
-      pushToHistory(updated);
+      lastInternalContentRef.current = updated;
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = setTimeout(() => {
+        pushToHistory(updated);
+      }, 400);
       onContentChange(updated);
     }
   };
 
-  // In-place Visual HTML Iframe Editor synchronization
-  useEffect(() => {
-    if (editorMode !== "visual" || !isRawHtml(content)) return;
+  // Save active selection inside visual iframe
+  const saveIframeSelection = () => {
+    const iframe = visualIframeRef.current;
+    const win = iframe?.contentWindow;
+    const doc = iframe?.contentDocument || win?.document;
+    if (!win || !doc) return;
+    try {
+      const sel = win.getSelection();
+      if (sel && sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0);
+        if (doc.body && doc.body.contains(range.commonAncestorContainer)) {
+          lastIframeRangeRef.current = range.cloneRange();
+        }
+      }
+    } catch {}
+  };
 
-    // Prevent rebuilding the iframe DOM when typing directly inside it!
-    // This fixes the jumping / scrolling to the top issue!
-    if (isIframeEditingRef.current) {
-      isIframeEditingRef.current = false;
+  // Immediate real-time sync from Visual Canvas iframe to parent state & Live Preview
+  const handleVisualInput = () => {
+    const iframe = visualIframeRef.current;
+    const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
+    if (!doc || !doc.body) return;
+
+    try {
+      const cleanHtml = extractCleanHtmlFromVisualDoc(doc, isFullDocRef.current);
+      if (cleanHtml && cleanHtml !== lastInternalContentRef.current) {
+        lastInternalContentRef.current = cleanHtml;
+        if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = setTimeout(() => {
+          pushToHistory(cleanHtml);
+        }, 400);
+        onContentChange(cleanHtml);
+      }
+    } catch (err) {
+      console.warn("Visual input sync error:", err);
+    }
+  };
+
+  const handleVisualFocus = () => {
+    setActiveTarget("content");
+    saveIframeSelection();
+  };
+
+  const handleVisualClick = (e: MouseEvent) => {
+    saveIframeSelection();
+    const target = e.target as HTMLElement;
+    if (!target) return;
+
+    // 1. Intercept Image Click (for resize, custom image/logo, alignment)
+    const imgEl = target.closest("img") as HTMLImageElement | null;
+    if (imgEl) {
+      e.preventDefault();
+      e.stopPropagation();
+      const currentSrc = imgEl.getAttribute("src") || "";
+      const currentAlt = imgEl.getAttribute("alt") || "";
+      const currentWidth =
+        imgEl.style.width || imgEl.getAttribute("width") || imgEl.style.maxWidth || "280px";
+      let currentAlign: "left" | "center" | "right" = "center";
+      const parent = imgEl.parentElement;
+      if (parent && parent.style.textAlign) {
+        currentAlign = (parent.style.textAlign as any) || "center";
+      }
+      const iframe = visualIframeRef.current;
+      const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
+      setActiveImageData({
+        element: imgEl,
+        src: currentSrc,
+        alt: currentAlt,
+        width: currentWidth,
+        align: currentAlign,
+        originalHtml: doc ? extractCleanHtmlFromVisualDoc(doc, isFullDocRef.current) : content,
+      });
+      setImageSrcInput(currentSrc);
+      setImageAltInput(currentAlt);
+      setImageWidthInput(currentWidth || "280px");
+      setImageAlignInput(currentAlign);
+      setActiveLinkData(null);
       return;
     }
 
+    // 2. Intercept Anchor Link Click
+    const linkEl = target.closest("a") as HTMLAnchorElement | null;
+    if (linkEl) {
+      e.preventDefault();
+      e.stopPropagation();
+      const currentHref = linkEl.getAttribute("href") || "";
+      const linkText = (linkEl.innerText || linkEl.textContent || "").trim() || "Tombol / Tautan";
+      setActiveLinkData({
+        element: linkEl,
+        range: null,
+        text: linkText,
+        url: currentHref,
+        isExisting: true,
+      });
+      setLinkUrlInput(currentHref);
+      setActiveImageData(null);
+      return;
+    }
+  };
+
+  // Attach all event listeners to iframe document ensuring capture phase is true
+  const attachVisualIframeListeners = (doc: Document) => {
+    if (!doc || !doc.body) return;
+
+    const onDelayedInput = () => setTimeout(handleVisualInput, 15);
+
+    // Document-level capture listeners
+    doc.removeEventListener("input", handleVisualInput, true);
+    doc.addEventListener("input", handleVisualInput, true);
+
+    doc.removeEventListener("keyup", handleVisualInput, true);
+    doc.addEventListener("keyup", handleVisualInput, true);
+
+    doc.removeEventListener("paste", onDelayedInput, true);
+    doc.addEventListener("paste", onDelayedInput, true);
+
+    doc.removeEventListener("cut", onDelayedInput, true);
+    doc.addEventListener("cut", onDelayedInput, true);
+
+    doc.removeEventListener("drop", onDelayedInput, true);
+    doc.addEventListener("drop", onDelayedInput, true);
+
+    doc.removeEventListener("blur", handleVisualInput, true);
+    doc.addEventListener("blur", handleVisualInput, true);
+
+    doc.removeEventListener("selectionchange", saveIframeSelection);
+    doc.addEventListener("selectionchange", saveIframeSelection);
+
+    doc.removeEventListener("click", handleVisualClick as any, true);
+    doc.addEventListener("click", handleVisualClick as any, true);
+
+    // Body-level listeners as secondary guarantee
+    if (doc.body) {
+      doc.body.removeEventListener("input", handleVisualInput, true);
+      doc.body.addEventListener("input", handleVisualInput, true);
+
+      doc.body.removeEventListener("keyup", handleVisualInput, true);
+      doc.body.addEventListener("keyup", handleVisualInput, true);
+
+      doc.body.removeEventListener("focus", handleVisualFocus);
+      doc.body.addEventListener("focus", handleVisualFocus);
+
+      doc.body.removeEventListener("mouseup", saveIframeSelection);
+      doc.body.addEventListener("mouseup", saveIframeSelection);
+    }
+  };
+
+  // Helper to load or reload iframe HTML content
+  const loadIframeContent = (force: boolean = false) => {
     const iframe = visualIframeRef.current;
     if (!iframe) return;
 
     const doc = iframe.contentDocument || iframe.contentWindow?.document;
     if (!doc) return;
+
+    // If content hasn't changed externally and document is already populated, just ensure listeners are attached
+    if (!force && content === lastInternalContentRef.current && doc.body && doc.body.innerHTML) {
+      attachVisualIframeListeners(doc);
+      return;
+    }
+
+    lastInternalContentRef.current = content;
+
+    const { fullHtml, isFullDoc } = prepareHtmlForVisualEditor(content);
+    isFullDocRef.current = isFullDoc;
 
     const win = iframe.contentWindow;
     const prevScrollX = win ? win.scrollX : 0;
@@ -782,61 +1095,10 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
     const parentContainer = visualParentScrollRef.current;
     const parentScrollTop = parentContainer ? parentContainer.scrollTop : 0;
 
-    const editableHtml = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <style>
-          html, body {
-            scroll-behavior: auto !important;
-          }
-          body {
-            margin: 0;
-            padding: 18px;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            color: #1e293b;
-            line-height: 1.5;
-            outline: none;
-            min-height: 380px;
-          }
-          [contenteditable="true"] *:hover {
-            outline: 1.5px dashed #94a3b8 !important;
-            outline-offset: 2px;
-            cursor: text;
-          }
-          [contenteditable="true"] *:focus {
-            outline: 1.5px solid #0f172a !important;
-            outline-offset: 2px;
-          }
-          a, [role="button"] {
-            cursor: pointer !important;
-          }
-          a:hover {
-            outline: 1.5px solid #2563eb !important;
-            outline-offset: 2px !important;
-          }
-          img {
-            cursor: pointer !important;
-            transition: outline 0.15s ease-in-out;
-          }
-          img:hover {
-            outline: 2px dashed #0284c7 !important;
-            outline-offset: 2px !important;
-          }
-        </style>
-      </head>
-      <body contenteditable="true">
-        ${content}
-      </body>
-      </html>
-    `;
-
     doc.open();
-    doc.write(editableHtml);
+    doc.write(fullHtml);
     doc.close();
 
-    // Restore scroll positions so it never jumps to the top
     if (win && (prevScrollX > 0 || prevScrollY > 0)) {
       win.scrollTo(prevScrollX, prevScrollY);
     }
@@ -844,80 +1106,24 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
       parentContainer.scrollTop = parentScrollTop;
     }
 
-    const handleInput = () => {
-      if (doc.body) {
-        isIframeEditingRef.current = true;
-        const updatedHtml = doc.body.innerHTML;
-        onContentChange(updatedHtml);
-      }
-    };
+    attachVisualIframeListeners(doc);
+  };
 
-    const handleFocus = () => {
-      setActiveTarget("content");
-    };
+  // In-place Visual HTML Iframe Editor synchronization effect
+  useEffect(() => {
+    if (editorMode !== "visual" || !isRawHtml(content)) return;
 
-    const handleClick = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
+    // If content matches internal content (user typed in iframe), NEVER re-write the document!
+    const iframe = visualIframeRef.current;
+    const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
+    if (content === lastInternalContentRef.current && doc && doc.body && doc.body.innerHTML) {
+      // Re-attach listeners to ensure they remain active across state cycles
+      attachVisualIframeListeners(doc);
+      return;
+    }
 
-      // 1. Intercept Image Click (for resize, custom image/logo, alignment)
-      const imgEl = target.closest("img") as HTMLImageElement | null;
-      if (imgEl) {
-        e.preventDefault();
-        e.stopPropagation();
-        const currentSrc = imgEl.getAttribute("src") || "";
-        const currentAlt = imgEl.getAttribute("alt") || "";
-        const currentWidth =
-          imgEl.style.width || imgEl.getAttribute("width") || imgEl.style.maxWidth || "280px";
-        let currentAlign: "left" | "center" | "right" = "center";
-        const parent = imgEl.parentElement;
-        if (parent && parent.style.textAlign) {
-          currentAlign = (parent.style.textAlign as any) || "center";
-        }
-        setActiveImageData({
-          element: imgEl,
-          src: currentSrc,
-          alt: currentAlt,
-          width: currentWidth,
-          align: currentAlign,
-          originalHtml: doc.body.innerHTML,
-        });
-        setImageSrcInput(currentSrc);
-        setImageAltInput(currentAlt);
-        setImageWidthInput(currentWidth || "280px");
-        setImageAlignInput(currentAlign);
-        setActiveLinkData(null);
-        return;
-      }
-
-      // 2. Intercept Anchor Link Click
-      const linkEl = target.closest("a") as HTMLAnchorElement | null;
-      if (linkEl) {
-        e.preventDefault();
-        e.stopPropagation();
-        const currentHref = linkEl.getAttribute("href") || "";
-        const linkText = (linkEl.innerText || linkEl.textContent || "").trim() || "Tombol / Tautan";
-        setActiveLinkData({
-          element: linkEl,
-          range: null,
-          text: linkText,
-          url: currentHref,
-          isExisting: true,
-        });
-        setLinkUrlInput(currentHref);
-        setActiveImageData(null);
-        return;
-      }
-    };
-
-    doc.body.addEventListener("input", handleInput);
-    doc.body.addEventListener("focus", handleFocus);
-    doc.body.addEventListener("click", handleClick);
-
-    return () => {
-      doc.body?.removeEventListener("input", handleInput);
-      doc.body?.removeEventListener("focus", handleFocus);
-      doc.body?.removeEventListener("click", handleClick);
-    };
+    // External change (switched tab, typed in HTML code editor, undo/redo): reload document
+    loadIframeContent(true);
   }, [content, editorMode, visualSubView]);
 
 
@@ -931,10 +1137,36 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
         } else {
           handleUndo();
         }
+        return;
       } else if (e.key === "y" || e.key === "Y") {
         e.preventDefault();
         handleRedo();
+        return;
       }
+    }
+
+    // Support Tab key indentation inside HTML code editor
+    if (e.key === "Tab") {
+      e.preventDefault();
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const val = textarea.value;
+      const tabSpaces = "  "; // 2 spaces
+
+      const newVal = val.substring(0, start) + tabSpaces + val.substring(end);
+      lastInternalContentRef.current = newVal;
+      pushToHistory(newVal);
+      onContentChange(newVal);
+
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.selectionStart = start + tabSpaces.length;
+          textareaRef.current.selectionEnd = start + tabSpaces.length;
+          updateCursorPos(textareaRef.current);
+        }
+      }, 0);
     }
   };
 
@@ -1041,14 +1273,34 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
                           const reader = new FileReader();
                           reader.onload = (event) => {
                             const result = event.target?.result as string;
+
                             if (result) {
-                              onMediaUrlChange?.(result);
-                              toast.success(`Gambar "${file.name}" siap dilampirkan!`);
+                              // Kompres otomatis gambar ke ukuran banner optimal (~100KB) agar muat disimpan di browser
+                              const img = new Image();
+                              img.onload = () => {
+                                const canvas = document.createElement("canvas");
+                                const maxWidth = 1000;
+                                let width = img.width;
+                                let height = img.height;
+                                if (width > maxWidth) {
+                                  height = Math.round((height * maxWidth) / width);
+                                  width = maxWidth;
+                                }
+                                canvas.width = width;
+                                canvas.height = height;
+                                const ctx = canvas.getContext("2d");
+                                ctx?.drawImage(img, 0, 0, width, height);
+                                const compressed = canvas.toDataURL("image/jpeg", 0.8);
+                                onMediaUrlChange?.(compressed);
+                                toast.success(`Gambar "${file.name}" siap dilampirkan!`);
+                              };
+                              img.src = result;
                             }
                           };
                           reader.readAsDataURL(file);
                         }
                       }}
+
                   />
                 </label>
               </div>
@@ -1182,15 +1434,6 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
                 <span>Sisipkan Logo</span>
               </button>
             )}
-            <span className="text-[11px] text-slate-400 font-mono hidden sm:inline">
-              {editorMode === "html"
-                ? "Mode HTML"
-                : contentIsHtml
-                ? visualSubView === "canvas"
-                  ? "Kanvas Visual"
-                  : "Formulir Teks"
-                : "Teks Biasa"}
-            </span>
 
             {/* Quick Height Expand Toggle Button */}
             <button
@@ -1223,52 +1466,112 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
           channel={channel}
           editorMode={editorMode}
           onInsertHtmlSnippet={handleInsertHtmlSnippet}
+          onInsertTag={handleInsertTag}
+          onFormatHtml={handleFormatHtml}
+          wordWrap={wordWrap}
+          onToggleWordWrap={handleToggleWordWrap}
         />
 
         {/* EDITOR BODY CONTENT */}
         <div className="relative">
           {editorMode === "html" ? (
-            /* MODE 1: KODE HTML EMAIL (SYNTAX HIGHLIGHTED) */
+            /* MODE 1: KODE HTML EMAIL (DIRECT SYNTAX HIGHLIGHTED CODE EDITOR) */
             <div
-              className="relative w-full bg-slate-950 rounded-b-xl overflow-hidden font-mono text-xs transition-all duration-150"
+              className="relative w-full bg-[#0d1117] text-slate-100 rounded-b-xl overflow-auto font-mono text-xs flex border-t border-slate-800"
               style={{ height: `${editorHeight}px` }}
             >
-              {/* Highlighted Code Underlay */}
-              <pre
-                ref={codePreRef}
+              {/* Synchronized Sticky Gutter */}
+              <div
                 aria-hidden="true"
-                className="absolute inset-0 p-4 m-0 overflow-hidden font-mono text-xs leading-relaxed whitespace-pre-wrap break-words pointer-events-none select-none text-slate-200"
-                dangerouslySetInnerHTML={{
-                  __html: highlightedHtml,
-                }}
-              />
+                className="sticky left-0 z-20 select-none bg-[#090d16] border-r border-slate-800/80 text-slate-500 font-mono text-[11px] text-right py-3 pr-2.5 pl-2 shrink-0 pointer-events-none"
+                style={{ minHeight: "100%" }}
+              >
+                {Array.from({ length: lineCount }, (_, i) => (
+                  <div
+                    key={i + 1}
+                    style={{ height: "22px", lineHeight: "22px" }}
+                    className={`${
+                      cursorPos.line === i + 1 ? "text-indigo-400 font-bold" : "text-slate-600"
+                    }`}
+                  >
+                    {i + 1}
+                  </div>
+                ))}
+              </div>
 
-              {/* Transparent Interactive Textarea on Top */}
-              <textarea
-                ref={textareaRef}
-                value={content}
-                onScroll={handleCodeScroll}
-                onFocus={() => {
-                  setActiveTarget("content");
-                }}
-                onClick={() => {
-                  setActiveTarget("content");
-                }}
-                onSelect={() => {
-                  setActiveTarget("content");
-                }}
-                onChange={handleTextareaChange}
-                onKeyDown={handleKeyDown}
-                placeholder="<!-- Tulis atau tempel kode HTML Email Anda di sini -->"
-                spellCheck={false}
-                className="relative z-10 w-full h-full p-4 font-mono text-xs leading-relaxed bg-transparent text-transparent caret-white selection:bg-indigo-600/50 resize-none focus:outline-none placeholder:text-slate-600 whitespace-pre-wrap break-words"
-              />
+              {/* Editor Workspace powered by react-simple-code-editor & PrismJS */}
+              <div className="flex-1 min-w-0">
+                <Editor
+                  value={content}
+                  onValueChange={handleEditorValueChange}
+                  highlight={(code: string) => highlightHtmlCode(code)}
+                  padding={12}
+                  tabSize={2}
+                  insertSpaces={true}
+                  ignoreTabKey={false}
+                  textareaId="template-html-code-editor"
+                  textareaClassName="font-mono text-[13px] leading-[22px] outline-none text-slate-100"
+                  preClassName="font-mono text-[13px] leading-[22px] text-slate-100"
+                  className={wordWrap ? "code-editor-wrap text-slate-100" : "code-editor-nowrap text-slate-100"}
+                  style={{
+                    fontFamily: 'Consolas, Monaco, "Courier New", monospace',
+                    fontSize: "13px",
+                    lineHeight: "22px",
+                    color: "#f8fafc",
+                    minHeight: "100%",
+                  }}
+                  onClick={() => {
+                    setActiveTarget("content");
+                    const el = getActiveTextarea();
+                    if (el) {
+                      textareaRef.current = el;
+                      updateCursorPos(el);
+                    }
+                  }}
+                  onFocus={() => {
+                    setActiveTarget("content");
+                    const el = getActiveTextarea();
+                    if (el) {
+                      textareaRef.current = el;
+                      updateCursorPos(el);
+                    }
+                  }}
+                  onKeyUp={() => {
+                    const el = getActiveTextarea();
+                    if (el) {
+                      textareaRef.current = el;
+                      updateCursorPos(el);
+                    }
+                  }}
+                  onKeyDown={(e: React.KeyboardEvent) => {
+                    if (e.ctrlKey || e.metaKey) {
+                      if (e.key === "z" || e.key === "Z") {
+                        e.preventDefault();
+                        if (e.shiftKey) {
+                          handleRedo();
+                        } else {
+                          handleUndo();
+                        }
+                        return;
+                      } else if (e.key === "y" || e.key === "Y") {
+                        e.preventDefault();
+                        handleRedo();
+                        return;
+                      }
+                    }
+                  }}
+                  placeholder="<!-- Tulis atau tempel kode HTML Email Anda di sini -->"
+                />
+              </div>
             </div>
           ) : contentIsHtml ? (
             /* MODE 2: VISUAL FORMAT TEKS (NO RAW CODE TAGS!) */
-            visualSubView === "canvas" ? (
-              /* SUB-VIEW 2A: IN-PLACE EDITABLE VISUAL CANVAS */
-              <div className="flex flex-col bg-white">
+            <div className="relative">
+              {/* SUB-VIEW 2A: IN-PLACE EDITABLE VISUAL CANVAS */}
+              <div
+                style={{ display: visualSubView === "canvas" ? "flex" : "none" }}
+                className="flex-col bg-white"
+              >
                 <div className="px-3.5 py-1.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs text-slate-600">
                   <div className="flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
@@ -1338,19 +1641,22 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
                 >
                   <iframe
                     ref={visualIframeRef}
+                    onLoad={() => loadIframeContent(false)}
                     title="In-Place Visual Email Editor"
                     className="w-full h-full min-h-[440px] border border-slate-200/90 rounded-xl bg-white shadow-2xs"
                   />
                 </div>
               </div>
-            ) : (
-              /* SUB-VIEW 2B: DETECTED TEXT FORM INPUTS */
-              <VisualFieldsListEditor
-                extractedTextBlocks={extractedTextBlocks}
-                editorHeight={editorHeight}
-                onUpdateExtractedText={handleUpdateExtractedText}
-              />
-            )
+
+              {/* SUB-VIEW 2B: DETECTED TEXT FORM INPUTS */}
+              <div style={{ display: visualSubView === "fields" ? "block" : "none" }}>
+                <VisualFieldsListEditor
+                  extractedTextBlocks={extractedTextBlocks}
+                  editorHeight={editorHeight}
+                  onUpdateExtractedText={handleUpdateExtractedText}
+                />
+              </div>
+            </div>
           ) : (
             /* MODE 3: STANDARD PLAIN TEXT / MARKDOWN EDITOR */
             <textarea
@@ -1385,6 +1691,12 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
             <span className="text-[11px] text-slate-400 font-mono">
               {content.length} karakter
             </span>
+
+            {editorMode === "html" && (
+              <span className="text-[11px] text-indigo-600 font-mono font-medium bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
+                Baris {cursorPos.line}, Kolom {cursorPos.col}
+              </span>
+            )}
 
             {/* Quick Height Control */}
             <div className="inline-flex items-center gap-1 text-[11px] bg-slate-200/60 p-0.5 rounded-lg">
@@ -1494,6 +1806,8 @@ export const TemplateEditorPanel: React.FC<TemplateEditorPanelProps> = ({
             onInstagramUrlChange={onInstagramUrlChange}
             whatsappUrl={whatsappUrl}
             onWhatsappUrlChange={onWhatsappUrlChange}
+            footerAddress={footerAddress}
+            onFooterAddressChange={onFooterAddressChange}
           />
         </div>
       )}

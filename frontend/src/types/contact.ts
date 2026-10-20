@@ -24,4 +24,5 @@ export interface ContactList {
   id: string;
   name: string;
   description?: string;
+  contactCount?: number;
 }

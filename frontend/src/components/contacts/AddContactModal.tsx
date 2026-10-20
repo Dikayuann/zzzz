@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { toast } from "sonner";
+import { api } from "@/lib/api";
 import {
   Dialog,
   DialogContent,
@@ -27,39 +28,45 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({
   const [email, setEmail] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
   const [status, setStatus] = useState<ContactStatus>("Active");
-  const [listId, setListId] = useState<string>("list-customers");
+  const [listId, setListId] = useState<string>("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !email.trim()) {
-      toast.error("Nama dan Email wajib diisi!");
+    if (!name.trim()) {
+      toast.error("Nama kontak wajib diisi!");
+      return;
+    }
+    if (!email.trim() && !whatsapp.trim()) {
+      toast.error("Minimal salah satu dari Email atau No. WhatsApp wajib diisi!");
       return;
     }
 
-    const created: ContactItem = {
-      id: `ct-${Date.now()}`,
-      name: name.trim(),
-      email: email.trim(),
-      whatsapp: whatsapp.trim() || undefined,
-      consent: {
-        email: true,
-        telegram: false,
-        whatsapp: Boolean(whatsapp.trim()),
-      },
-      status,
-      joinedDate: "Hari ini",
-      tags: ["customer"],
-      listId,
-      initialsBg: "bg-sky-100",
-      initialsColor: "text-sky-700",
-    };
+    try {
+      setIsSubmitting(true);
+      const parsedListId = listId && listId !== "all" ? Number(listId) : undefined;
+      const payload: any = {
+        name: name.trim(),
+        email: email.trim() || undefined,
+        whatsappNumber: whatsapp.trim() || undefined,
+        status: status.toLowerCase(),
+      };
+      if (parsedListId && !isNaN(parsedListId)) {
+        payload.listId = parsedListId;
+      }
 
-    onAddContact(created);
-    toast.success(`Kontak "${created.name}" berhasil ditambahkan!`);
-    onOpenChange(false);
-    setName("");
-    setEmail("");
-    setWhatsapp("");
+      await api.post("/contacts", payload);
+      toast.success(`Kontak "${name}" berhasil ditambahkan!`);
+      onOpenChange(false);
+      setName("");
+      setEmail("");
+      setWhatsapp("");
+      onAddContact({} as any);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Gagal menambahkan kontak");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -150,9 +157,10 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({
             </button>
             <button
               type="submit"
-              className="px-4 py-2 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-xs font-semibold text-white shadow-sm transition cursor-pointer"
+              disabled={isSubmitting}
+              className="px-4 py-2 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-xs font-semibold text-white shadow-sm transition cursor-pointer disabled:opacity-50"
             >
-              Simpan Kontak
+              {isSubmitting ? "Menyimpan..." : "Simpan Kontak"}
             </button>
           </DialogFooter>
         </form>

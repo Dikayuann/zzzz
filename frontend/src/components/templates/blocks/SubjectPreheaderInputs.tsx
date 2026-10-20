@@ -19,7 +19,7 @@ export interface SubjectPreheaderInputsProps {
 }
 
 export const SubjectPreheaderInputs: React.FC<SubjectPreheaderInputsProps> = ({
-  channel,
+  channel: rawChannel,
   subject,
   onSubjectChange,
   preheader = "",
@@ -34,6 +34,9 @@ export const SubjectPreheaderInputs: React.FC<SubjectPreheaderInputsProps> = ({
   handleInsertSubjectTag,
   handleInsertPreheaderTag,
 }) => {
+  const channel: TemplateChannel =
+    rawChannel === "whatsapp" || rawChannel === "telegram" ? rawChannel : "email";
+
   const [showPreheaderInput, setShowPreheaderInput] = useState(Boolean(preheader));
 
   const updateSubjectSelection = () => {
@@ -114,7 +117,7 @@ export const SubjectPreheaderInputs: React.FC<SubjectPreheaderInputsProps> = ({
           <span className="text-[10px] font-semibold text-slate-400">
             Sisipkan ke Subjek:
           </span>
-          {["{{first_name}}", "{{nama}}", "{{kode_promo}}", "{{diskon}}", "{{org_name}}"].map((tag) => (
+          {["{{first_name}}", "{{nama}}", "{{kode_promo}}", "{{diskon}}", "{{org_name}}", "[nama]", "{{}}"].map((tag) => (
             <button
               key={tag}
               type="button"

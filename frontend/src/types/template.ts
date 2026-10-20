@@ -51,4 +51,5 @@ export type ToolbarAction =
   | "h1"
   | "h2"
   | "bullet"
-  | "link";
+  | "link"
+  | "bracket";

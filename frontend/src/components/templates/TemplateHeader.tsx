@@ -23,6 +23,7 @@ interface TemplateHeaderProps {
   onOpenTestSend?: () => void;
   isSaving?: boolean;
   hasSavedTemplate?: boolean;
+  hasUnsavedChanges?: boolean;
 }
 
 export const TemplateHeader: React.FC<TemplateHeaderProps> = ({
@@ -37,9 +38,13 @@ export const TemplateHeader: React.FC<TemplateHeaderProps> = ({
   onOpenTestSend,
   isSaving = false,
   hasSavedTemplate = false,
+  hasUnsavedChanges = false,
 }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [tempTitle, setTempTitle] = useState(title);
+
+  const effectiveChannel: TemplateChannel =
+    channel === "whatsapp" || channel === "telegram" ? channel : "email";
 
   const handleCommitTitle = () => {
     if (tempTitle.trim()) {
@@ -94,11 +99,23 @@ export const TemplateHeader: React.FC<TemplateHeaderProps> = ({
               {title}
             </h1>
             <Edit2 className="h-3.5 w-3.5 text-slate-400 opacity-0 group-hover:opacity-100 transition shrink-0" />
-            {hasSavedTemplate && (
-              <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-full shrink-0">
-                Tersimpan
+            {hasUnsavedChanges ? (
+              <span
+                className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded-full shrink-0 flex items-center gap-1.5 shadow-2xs"
+                title="Ada perubahan yang belum disimpan ke database"
+              >
+                
+                <span>Belum Disimpan</span>
               </span>
-            )}
+            ) : hasSavedTemplate ? (
+              <span
+                className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-full shrink-0 flex items-center gap-1"
+                title="Template sudah tersimpan di database"
+              >
+                <Check className="h-3 w-3 text-emerald-600 shrink-0" />
+                <span>Tersimpan</span>
+              </span>
+            ) : null}
           </div>
         )}
 
@@ -142,18 +159,18 @@ export const TemplateHeader: React.FC<TemplateHeaderProps> = ({
               type="button"
               onClick={onOpenTestSend}
               className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border text-xs font-semibold shadow-2xs transition cursor-pointer active:scale-95 whitespace-nowrap ${
-                channel === "whatsapp"
+                effectiveChannel === "whatsapp"
                   ? "border-emerald-200 bg-emerald-50/90 hover:bg-emerald-100 text-emerald-700"
-                  : channel === "telegram"
+                  : effectiveChannel === "telegram"
                   ? "border-sky-200 bg-sky-50/90 hover:bg-sky-100 text-sky-700"
                   : "border-indigo-200 bg-indigo-50/90 hover:bg-indigo-100 text-indigo-700"
               }`}
-              title={`Kirim ${channel === "whatsapp" ? "WhatsApp" : channel === "telegram" ? "Telegram" : "email"} uji coba`}
+              title={`Kirim ${effectiveChannel === "whatsapp" ? "WhatsApp" : effectiveChannel === "telegram" ? "Telegram" : "email"} uji coba`}
             >
               <Send className={`h-3.5 w-3.5 ${
-                channel === "whatsapp"
+                effectiveChannel === "whatsapp"
                   ? "text-emerald-600"
-                  : channel === "telegram"
+                  : effectiveChannel === "telegram"
                   ? "text-sky-600"
                   : "text-indigo-600"
               }`} />
@@ -166,7 +183,11 @@ export const TemplateHeader: React.FC<TemplateHeaderProps> = ({
             type="button"
             onClick={onSaveTemplate}
             disabled={isSaving}
-            className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-xs font-semibold text-white shadow-2xs transition cursor-pointer active:scale-95 disabled:opacity-60 whitespace-nowrap"
+            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer active:scale-95 disabled:opacity-60 whitespace-nowrap ${
+              hasUnsavedChanges
+                ? "bg-slate-900 hover:bg-slate-800 text-white ring-2 ring-amber-400/40"
+                : "bg-slate-900 hover:bg-slate-800 text-white"
+            }`}
           >
             {isSaving ? (
               <>
@@ -190,7 +211,7 @@ export const TemplateHeader: React.FC<TemplateHeaderProps> = ({
             type="button"
             onClick={() => onChannelChange("email")}
             className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition cursor-pointer ${
-              channel === "email"
+              effectiveChannel === "email"
                 ? "bg-white text-slate-900 shadow-2xs"
                 : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
             }`}
@@ -201,7 +222,7 @@ export const TemplateHeader: React.FC<TemplateHeaderProps> = ({
             type="button"
             onClick={() => onChannelChange("whatsapp")}
             className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition cursor-pointer ${
-              channel === "whatsapp"
+              effectiveChannel === "whatsapp"
                 ? "bg-emerald-600 text-white shadow-2xs"
                 : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
             }`}
@@ -212,7 +233,7 @@ export const TemplateHeader: React.FC<TemplateHeaderProps> = ({
             type="button"
             onClick={() => onChannelChange("telegram")}
             className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition cursor-pointer ${
-              channel === "telegram"
+              effectiveChannel === "telegram"
                 ? "bg-sky-500 text-white shadow-2xs"
                 : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
             }`}

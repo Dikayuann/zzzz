@@ -56,7 +56,7 @@ interface TemplateSelectorModalProps {
 export const TemplateSelectorModal: React.FC<TemplateSelectorModalProps> = ({
   open,
   onOpenChange,
-  channel,
+  channel: rawChannel,
   currentTemplateId,
   savedTemplates,
   onSelectPreset,
@@ -64,6 +64,8 @@ export const TemplateSelectorModal: React.FC<TemplateSelectorModalProps> = ({
   onNewBlankTemplate,
   onRefreshSavedTemplates,
 }) => {
+  const channel: TemplateChannel =
+    rawChannel === "whatsapp" || rawChannel === "telegram" ? rawChannel : "email";
   const [activeTab, setActiveTab] = useState<"presets" | "saved">("presets");
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
@@ -237,13 +239,28 @@ export const TemplateSelectorModal: React.FC<TemplateSelectorModalProps> = ({
                       >
                         <div>
                           <div className="flex items-center justify-between gap-2 mb-2">
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-slate-100 text-slate-700">
                                 {item.channelMode}
                               </span>
                               {latestVersion && (
                                 <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
                                   v{latestVersion.versionNo}
+                                </span>
+                              )}
+                              {latestVersion?.contentHtml && (
+                                <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
+                                  Email
+                                </span>
+                              )}
+                              {latestVersion?.contentWhatsapp && (
+                                <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
+                                  WhatsApp
+                                </span>
+                              )}
+                              {latestVersion?.contentTelegram && (
+                                <span className="text-[10px] font-semibold text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded border border-sky-100">
+                                  Telegram
                                 </span>
                               )}
                             </div>

@@ -15,12 +15,12 @@ import { MergeTagsModal } from "@/components/campaigns/MergeTagsModal";
 import type {
   DeliveryChannel,
   PresetTemplate,
+  AudienceOption,
   DraftPayload,
 } from "@/types/campaignWizard";
 import {
   PRESET_TEMPLATES,
   SENDER_PROFILES,
-  AUDIENCE_OPTIONS,
 } from "@/data/mockWizardData";
 import {
   CampaignWizardStepper,
@@ -86,8 +86,24 @@ export const NewCampaignPage: React.FC = () => {
   const waSender = "+62 812-8899-7766";
   const telegramBot = "@AcmeOfficialBlastBot";
 
-  // Audience
-  const [selectedAudience, setSelectedAudience] = useState<string>(() => initialDraft?.selectedAudience ?? "all-subscribers");
+  // Audience & Templates dari Database
+  const [selectedAudience, setSelectedAudience] = useState<string>(() => {
+    if (initialDraft?.selectedAudience && initialDraft.selectedAudience !== "all-subscribers") {
+      return initialDraft.selectedAudience;
+    }
+    return "all";
+  });
+  const [audienceOptions, setAudienceOptions] = useState<AudienceOption[]>([
+    {
+      id: "all",
+      name: "Semua Kontak Aktif",
+      desc: "Seluruh kontak aktif yang terdaftar di database",
+      count: 0,
+      badge: "Semua",
+    },
+  ]);
+  const [availableTemplates, setAvailableTemplates] = useState<PresetTemplate[]>(PRESET_TEMPLATES);
+  const [isLoadingAudiences, setIsLoadingAudiences] = useState<boolean>(true);
 
   // Template & Composer State
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>(() => initialDraft?.selectedTemplateId ?? "newsletter");
@@ -238,10 +254,117 @@ export const NewCampaignPage: React.FC = () => {
     };
   });
 
+  // Ambil data kontak, list, tag, dan template asli dari Database
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadAudienceAndTemplates = async () => {
+      try {
+        const [contactsRes, listsRes, tagsRes, templatesRes] = await Promise.allSettled([
+          api.get("/contacts?limit=1"),
+          api.get("/lists"),
+          api.get("/tags"),
+          api.get("/templates"),
+        ]);
+
+        if (!isMounted) return;
+
+        const totalContacts =
+          contactsRes.status === "fulfilled"
+            ? (contactsRes.value.data?.data?.meta?.total ?? contactsRes.value.data?.meta?.total ?? 0)
+            : 0;
+
+        const dynamicAudiences: AudienceOption[] = [
+          {
+            id: "all",
+            name: "Semua Kontak Aktif",
+            desc: "Seluruh kontak aktif yang terdaftar di database",
+            count: totalContacts,
+            badge: "Semua",
+          },
+        ];
+
+        if (listsRes.status === "fulfilled" && Array.isArray(listsRes.value.data?.data)) {
+          listsRes.value.data.data.forEach((l: any) => {
+            dynamicAudiences.push({
+              id: `list:${l.id}`,
+              name: l.name,
+              desc: l.description || `Folder kontak: ${l.name}`,
+              count: l.contactCount ?? 0,
+              badge: "List",
+            });
+          });
+        }
+
+        if (tagsRes.status === "fulfilled" && Array.isArray(tagsRes.value.data?.data)) {
+          tagsRes.value.data.data.forEach((t: any) => {
+            dynamicAudiences.push({
+              id: `tag:${t.id}`,
+              name: `#${t.name}`,
+              desc: `Kontak dengan label #${t.name}`,
+              count: t.contactCount ?? 0,
+              badge: "Tag",
+            });
+          });
+        }
+
+        if (dynamicAudiences.length > 0) {
+          setAudienceOptions(dynamicAudiences);
+
+          setSelectedAudience((prev) => {
+            if (prev === "all-subscribers" || !dynamicAudiences.some((a) => a.id === prev)) {
+              return "all";
+            }
+            return prev;
+          });
+        }
+
+        if (templatesRes.status === "fulfilled" && Array.isArray(templatesRes.value.data?.data)) {
+          const dbTemplates = templatesRes.value.data.data;
+          const formattedDb: PresetTemplate[] = dbTemplates.map((t: any) => {
+            const ver = t.versions?.[0] || {};
+            return {
+              id: String(t.id),
+              name: t.name,
+              badge: "Tersimpan",
+              desc: `Template tersimpan (${t.channelMode})`,
+              icon: Bookmark,
+              iconColor: "text-sky-600 bg-sky-50",
+              emailSubject: ver.subject || "",
+              emailContent: ver.contentHtml || "",
+              waContent: ver.contentWhatsapp || "",
+              telegramContent: ver.contentTelegram || "",
+            };
+          });
+
+          if (formattedDb.length > 0) {
+            setAvailableTemplates([...PRESET_TEMPLATES, ...formattedDb]);
+          }
+        }
+      } catch (err) {
+        console.error("Gagal memuat audiens / template:", err);
+      } finally {
+        if (isMounted) setIsLoadingAudiences(false);
+      }
+    };
+
+    loadAudienceAndTemplates();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const currentSenderProfile =
     SENDER_PROFILES.find((p) => p.id === emailSender) || SENDER_PROFILES[0];
   const currentAudienceObj =
-    AUDIENCE_OPTIONS.find((a) => a.id === selectedAudience) || AUDIENCE_OPTIONS[0];
+    audienceOptions.find((a) => a.id === selectedAudience) || audienceOptions[0] || {
+      id: "all",
+      name: "Semua Kontak Aktif",
+      desc: "Seluruh kontak aktif yang terdaftar di database",
+      count: 0,
+      badge: "Semua",
+    };
 
   const isFormDirty = () => campaignName.trim().length > 0 || currentStep > 1;
 
@@ -572,12 +695,20 @@ export const NewCampaignPage: React.FC = () => {
         )}
 
         {currentStep === 2 && (
-          <StepAudience
-            selectedAudience={selectedAudience}
-            onSelectAudience={setSelectedAudience}
-            selectedChannels={selectedChannels}
-            audienceOptions={AUDIENCE_OPTIONS}
-          />
+          <div className="relative space-y-3">
+            {isLoadingAudiences && (
+              <div className="flex items-center justify-end gap-1.5 text-[11px] text-sky-600 font-medium">
+                <span className="h-3 w-3 border-2 border-sky-600 border-t-transparent rounded-full animate-spin" />
+                <span>Memuat data segmen & list kontak...</span>
+              </div>
+            )}
+            <StepAudience
+              selectedAudience={selectedAudience}
+              onSelectAudience={setSelectedAudience}
+              selectedChannels={selectedChannels}
+              audienceOptions={audienceOptions}
+            />
+          </div>
         )}
 
         {currentStep === 3 && (
@@ -588,7 +719,7 @@ export const NewCampaignPage: React.FC = () => {
             onActiveTemplateTabChange={setActiveTemplateTab}
             selectedTemplateId={selectedTemplateId}
             onSelectTemplate={handleSelectTemplate}
-            presetTemplates={PRESET_TEMPLATES}
+            presetTemplates={availableTemplates}
             emailSubject={emailSubject}
             onEmailSubjectChange={setEmailSubject}
             emailContent={emailContent}

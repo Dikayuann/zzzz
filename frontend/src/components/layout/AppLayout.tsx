@@ -10,7 +10,7 @@ export const AppLayout: React.FC = () => {
       <AppSidebar />
       <SidebarInset>
         <Header />
-        <div className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
+        <div className="flex-1 p-4 sm:p-6 lg:p-8 max-w-[1600px] w-full mx-auto">
           <Outlet />
         </div>
       </SidebarInset>

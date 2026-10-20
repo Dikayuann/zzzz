@@ -88,7 +88,7 @@ export const TestSendModal: React.FC<TestSendModalProps> = ({
         setIsLoadingContacts(true);
         try {
           const res = await api.get("/contacts?limit=100");
-          const list = res.data?.data || [];
+          const list = res.data?.contacts || res.data?.data || [];
           setDbContacts(list);
           if (list.length > 0 && !selectedContactId) {
             setSelectedContactId(list[0].id);
@@ -419,7 +419,7 @@ export const TestSendModal: React.FC<TestSendModalProps> = ({
                     {isInputFocused && teleSuggestions.length > 0 && (
                       <div className="absolute z-20 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden py-1 divide-y divide-slate-100 max-h-48 overflow-y-auto">
                         <div className="px-3 py-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider bg-slate-50">
-                          Rekomendasi dari yang pernah /start bot:
+                          Rekomendasi:
                         </div>
                         {teleSuggestions.map((c) => {
                           const teleId = c.teleChatId || (c.customFields as any)?.teleChatId;

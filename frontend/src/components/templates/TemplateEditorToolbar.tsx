@@ -11,9 +11,21 @@ import {
   Minus,
   Columns2,
   Image,
+  Brackets,
+  ChevronDown,
+  Wand2,
+  WrapText,
 } from "lucide-react";
 import type { ToolbarAction, TemplateChannel } from "@/types/template";
 import { DEFAULT_GRAY_IMAGE_PLACEHOLDER } from "@/utils/htmlHighlighter";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 
 interface TemplateEditorToolbarProps {
   onAction: (action: ToolbarAction) => void;
@@ -22,6 +34,10 @@ interface TemplateEditorToolbarProps {
   channel?: TemplateChannel;
   editorMode?: "visual" | "html";
   onInsertHtmlSnippet?: (snippet: string) => void;
+  onInsertTag?: (tag: string) => void;
+  onFormatHtml?: () => void;
+  wordWrap?: boolean;
+  onToggleWordWrap?: () => void;
 }
 
 export const TemplateEditorToolbar: React.FC<TemplateEditorToolbarProps> = ({
@@ -31,6 +47,10 @@ export const TemplateEditorToolbar: React.FC<TemplateEditorToolbarProps> = ({
   channel = "email",
   editorMode = "visual",
   onInsertHtmlSnippet,
+  onInsertTag,
+  onFormatHtml,
+  wordWrap = true,
+  onToggleWordWrap,
 }) => {
   const isWA = channel === "whatsapp";
   const isHtml = editorMode === "html";
@@ -157,6 +177,120 @@ export const TemplateEditorToolbar: React.FC<TemplateEditorToolbarProps> = ({
             <Minus className="h-3 w-3" />
             <span>Garis</span>
           </button>
+
+          <div className="h-4 w-px bg-slate-200 mx-1" />
+
+          {/* Bracket Dropdown in HTML Mode */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 text-[11px] font-semibold transition cursor-pointer active:scale-95 shadow-2xs whitespace-nowrap"
+                title="Sisipkan Bracket Variabel ({{nama}}, [nama], dll)"
+              >
+                <Brackets className="h-3 w-3 text-indigo-600" />
+                <span>Bracket</span>
+                <ChevronDown className="h-3 w-3 text-indigo-500" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56 p-1.5 rounded-xl shadow-lg border border-slate-200 bg-white">
+              <DropdownMenuLabel className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1">
+                Format Bracket
+              </DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => onInsertTag?.("{{}}")} className="text-xs font-mono font-medium cursor-pointer">
+                <span>{"{{ ... }}"}</span>
+                <span className="text-[10px] text-slate-400 ml-auto font-sans">Kurung Ganda</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onInsertTag?.("[]")} className="text-xs font-mono font-medium cursor-pointer">
+                <span>{"[ ... ]"}</span>
+                <span className="text-[10px] text-slate-400 ml-auto font-sans">Kurung Siku</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onInsertTag?.("{}")} className="text-xs font-mono font-medium cursor-pointer">
+                <span>{"{ ... }"}</span>
+                <span className="text-[10px] text-slate-400 ml-auto font-sans">Kurung Tunggal</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1">
+                Variabel Kontak Cepat
+              </DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => onInsertTag?.("{{nama}}")} className="text-xs font-mono cursor-pointer flex justify-between">
+                <span>{"{{nama}}"}</span>
+                <span className="text-[10px] text-slate-400 font-sans">Nama Lengkap</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onInsertTag?.("{{first_name}}")} className="text-xs font-mono cursor-pointer flex justify-between">
+                <span>{"{{first_name}}"}</span>
+                <span className="text-[10px] text-slate-400 font-sans">Nama Depan</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onInsertTag?.("{{email}}")} className="text-xs font-mono cursor-pointer flex justify-between">
+                <span>{"{{email}}"}</span>
+                <span className="text-[10px] text-slate-400 font-sans">Email</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onInsertTag?.("{{telepon}}")} className="text-xs font-mono cursor-pointer flex justify-between">
+                <span>{"{{telepon}}"}</span>
+                <span className="text-[10px] text-slate-400 font-sans">No. HP</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onInsertTag?.("{{perusahaan}}")} className="text-xs font-mono cursor-pointer flex justify-between">
+                <span>{"{{perusahaan}}"}</span>
+                <span className="text-[10px] text-slate-400 font-sans">Perusahaan</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1">
+                Promo & Bisnis
+              </DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => onInsertTag?.("{{kode_promo}}")} className="text-xs font-mono cursor-pointer flex justify-between">
+                <span>{"{{kode_promo}}"}</span>
+                <span className="text-[10px] text-slate-400 font-sans">Voucher</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onInsertTag?.("{{diskon}}")} className="text-xs font-mono cursor-pointer flex justify-between">
+                <span>{"{{diskon}}"}</span>
+                <span className="text-[10px] text-slate-400 font-sans">Diskon</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onInsertTag?.("{{tanggal_hari_ini}}")} className="text-xs font-mono cursor-pointer flex justify-between">
+                <span>{"{{tanggal_hari_ini}}"}</span>
+                <span className="text-[10px] text-slate-400 font-sans">Tanggal</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onInsertTag?.("{{batas_waktu}}")} className="text-xs font-mono cursor-pointer flex justify-between">
+                <span>{"{{batas_waktu}}"}</span>
+                <span className="text-[10px] text-slate-400 font-sans">Deadline</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <div className="h-4 w-px bg-slate-200 mx-1" />
+
+          {/* Rapikan HTML Button */}
+          {onFormatHtml && (
+            <button
+              type="button"
+              onClick={onFormatHtml}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white border border-slate-200 hover:border-indigo-400 hover:text-indigo-600 text-[11px] font-medium text-slate-700 transition cursor-pointer active:scale-95 shadow-2xs whitespace-nowrap"
+              title="Rapikan dan Indentasi Kode HTML Otomatis (Format Line-by-Line)"
+            >
+              <Wand2 className="h-3 w-3 text-indigo-500" />
+              <span>Rapikan HTML</span>
+            </button>
+          )}
+
+          {/* Word Wrap Toggle */}
+          {onToggleWordWrap && (
+            <button
+              type="button"
+              onClick={onToggleWordWrap}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] font-medium transition cursor-pointer active:scale-95 shadow-2xs whitespace-nowrap ${
+                wordWrap
+                  ? "bg-indigo-50 border-indigo-300 text-indigo-700 font-semibold"
+                  : "bg-white border-slate-200 hover:border-slate-400 text-slate-700"
+              }`}
+              title={
+                wordWrap
+                  ? "Bungkus baris aktif. Klik untuk scroll horizontal"
+                  : "Scroll horizontal aktif. Klik untuk bungkus teks (word wrap)"
+              }
+            >
+              <WrapText className="h-3 w-3" />
+              <span>{wordWrap ? "Wrap: Aktif" : "Wrap: Mati"}</span>
+            </button>
+          )}
         </div>
       ) : (
         /* 3. MODE: VISUAL / TEXT FORMATTING */
@@ -260,6 +394,84 @@ export const TemplateEditorToolbar: React.FC<TemplateEditorToolbarProps> = ({
               <Link2 className="h-3.5 w-3.5" />
             </button>
           )}
+
+          <div className="h-4 w-px bg-slate-200 mx-1" />
+
+          {/* Bracket / Variable Dropdown Menu */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 text-[11px] font-semibold transition cursor-pointer active:scale-95 shadow-2xs"
+                title="Sisipkan Bracket Variabel ({{nama}}, [nama], dll)"
+              >
+                <Brackets className="h-3.5 w-3.5 text-indigo-600" />
+                <span>Bracket</span>
+                <ChevronDown className="h-3 w-3 text-indigo-500" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56 p-1.5 rounded-xl shadow-lg border border-slate-200 bg-white">
+              <DropdownMenuLabel className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1">
+                Format Bracket
+              </DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => onInsertTag?.("{{}}")} className="text-xs font-mono font-medium cursor-pointer">
+                <span>{"{{ ... }}"}</span>
+                <span className="text-[10px] text-slate-400 ml-auto font-sans">Kurung Ganda</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onInsertTag?.("[]")} className="text-xs font-mono font-medium cursor-pointer">
+                <span>{"[ ... ]"}</span>
+                <span className="text-[10px] text-slate-400 ml-auto font-sans">Kurung Siku</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onInsertTag?.("{}")} className="text-xs font-mono font-medium cursor-pointer">
+                <span>{"{ ... }"}</span>
+                <span className="text-[10px] text-slate-400 ml-auto font-sans">Kurung Tunggal</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1">
+                Variabel Kontak Cepat
+              </DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => onInsertTag?.("{{nama}}")} className="text-xs font-mono cursor-pointer flex justify-between">
+                <span>{"{{nama}}"}</span>
+                <span className="text-[10px] text-slate-400 font-sans">Nama Lengkap</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onInsertTag?.("{{first_name}}")} className="text-xs font-mono cursor-pointer flex justify-between">
+                <span>{"{{first_name}}"}</span>
+                <span className="text-[10px] text-slate-400 font-sans">Nama Depan</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onInsertTag?.("{{email}}")} className="text-xs font-mono cursor-pointer flex justify-between">
+                <span>{"{{email}}"}</span>
+                <span className="text-[10px] text-slate-400 font-sans">Email</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onInsertTag?.("{{telepon}}")} className="text-xs font-mono cursor-pointer flex justify-between">
+                <span>{"{{telepon}}"}</span>
+                <span className="text-[10px] text-slate-400 font-sans">No. HP</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onInsertTag?.("{{perusahaan}}")} className="text-xs font-mono cursor-pointer flex justify-between">
+                <span>{"{{perusahaan}}"}</span>
+                <span className="text-[10px] text-slate-400 font-sans">Perusahaan</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1">
+                Promo & Bisnis
+              </DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => onInsertTag?.("{{kode_promo}}")} className="text-xs font-mono cursor-pointer flex justify-between">
+                <span>{"{{kode_promo}}"}</span>
+                <span className="text-[10px] text-slate-400 font-sans">Voucher</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onInsertTag?.("{{diskon}}")} className="text-xs font-mono cursor-pointer flex justify-between">
+                <span>{"{{diskon}}"}</span>
+                <span className="text-[10px] text-slate-400 font-sans">Diskon</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onInsertTag?.("{{tanggal_hari_ini}}")} className="text-xs font-mono cursor-pointer flex justify-between">
+                <span>{"{{tanggal_hari_ini}}"}</span>
+                <span className="text-[10px] text-slate-400 font-sans">Tanggal</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onInsertTag?.("{{batas_waktu}}")} className="text-xs font-mono cursor-pointer flex justify-between">
+                <span>{"{{batas_waktu}}"}</span>
+                <span className="text-[10px] text-slate-400 font-sans">Deadline</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       )}
     </div>
