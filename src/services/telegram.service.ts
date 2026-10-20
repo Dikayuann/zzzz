@@ -13,6 +13,22 @@ const maskBotToken = (token: string): string => {
     return `${token.slice(0, 4)}••••••••••••${token.slice(-4)}`;
 };
 
+// Konversi format Markdown chat (*bold*, _italic_, ~strike~, ```code```) ke tag HTML Telegram
+export const formatTelegramText = (text: string): string => {
+    if (!text) return "";
+    let escaped = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+
+    escaped = escaped.replace(/```([\s\S]*?)```/g, "<pre>$1</pre>");
+    escaped = escaped.replace(/\*\*([^*\n]+?)\*\*/g, "<b>$1</b>");
+    escaped = escaped.replace(/\*([^*\n]+?)\*/g, "<b>$1</b>");
+    escaped = escaped.replace(/_([^_\n]+?)_/g, "<i>$1</i>");
+    escaped = escaped.replace(/~([^~\n]+?)~/g, "<s>$1</s>");
+    return escaped;
+};
+
 // ambil informasi bot telegram tenant
 export const getTelegramBotConfig = async (tenantId: number) => {
     const bot = await prisma.telegramBot.findUnique({
@@ -138,38 +154,98 @@ export const sendTestTelegramMessage = async (
         throw new AppError("Bot Telegram belum terhubung. Silakan hubungkan token bot terlebih dahulu.", 400);
     }
 
+    // convert username jadi chat id
+    let effectiveChatId = input.chatId.trim();
+    if (!/^-?\d+$/.test(effectiveChatId)) {
+        const cleanUsername = effectiveChatId.replace(/^@/, "").toLowerCase();
+        const contactsWithTele = await prisma.contact.findMany({
+            where: {
+                tenantId,
+                teleChatId: { not: null },
+                deletedAt: null
+            },
+            select: { id: true, name: true, teleChatId: true, customFields: true },
+        });
+
+        const matched = contactsWithTele.find((c) => {
+            const u = (c.customFields as any)?.telegramUsername?.replace(/^@/,"").toLowerCase();
+            const n = c.name?.toLowerCase().trim();
+            return u === cleanUsername || n === cleanUsername;
+        });
+        if (matched && matched.teleChatId) {
+            effectiveChatId = matched.teleChatId;
+        } else if (!effectiveChatId.startsWith("@")) {
+            throw new AppError(`Kontak "${input.chatId}" tidak ditemukan atau belum pernah klik /start pada bot Anda.`, 404);
+        }
+    }
+
+    // kirim pesan dan gambar
     let telegramResponse: any;
     try {
         const isPhoto = Boolean(input.mediaUrl && input.mediaUrl.trim());
-        const endpoint = isPhoto ? `https://api.telegram.org/bot${bot.botToken}/sendPhoto` : `https://api.telegram.org/bot${bot.botToken}/sendMessage`;
+        const formattedMessage = input.message
+            ? (input.parseMode === "Markdown" ? input.message : formatTelegramText(input.message))
+            : undefined;
 
-        const requestBody = isPhoto ? {
-            chat_id: input.chatId.trim(),
-            photo: input.mediaUrl!.trim(),
-            caption: input.message,
-            parse_mode: input.parseMode || "HTML",
+        if (isPhoto) {
+            const rawMedia = input.mediaUrl!.trim();
+            // Jika gambar berupa data URI Base64 (upload banner lokal)
+            if (rawMedia.startsWith("data:")) {
+                const matches = rawMedia.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+                if (matches && matches.length === 3) {
+                    const mimeType = matches[1];
+                    const buffer = Buffer.from(matches[2], "base64");
+                    const ext = mimeType.split("/")[1] || "jpg";
+                    const formData = new FormData();
+                    formData.append("chat_id", effectiveChatId);
+                    formData.append("photo", new Blob([buffer], { type: mimeType }), `image.${ext}`);
+                    if (formattedMessage) {
+                        formData.append("caption", formattedMessage);
+                        formData.append("parse_mode", input.parseMode || "HTML");
+                    }
+                    const res = await fetch(`https://api.telegram.org/bot${bot.botToken}/sendPhoto`, {
+                        method: "POST",
+                        body: formData,
+                    });
+                    telegramResponse = await res.json();
+                } else {
+                    throw new AppError("Format gambar base64 tidak valid", 400);
+                }
+            } else {
+                // Jika berupa URL internet publik (http/https)
+                const res = await fetch(`https://api.telegram.org/bot${bot.botToken}/sendPhoto`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        chat_id: effectiveChatId,
+                        photo: rawMedia,
+                        caption: formattedMessage,
+                        parse_mode: input.parseMode || "HTML",
+                    }),
+                });
+                telegramResponse = await res.json();
+            }
+        } else {
+            // Pesan teks biasa
+            const res = await fetch(`https://api.telegram.org/bot${bot.botToken}/sendMessage`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    chat_id: effectiveChatId,
+                    text: formattedMessage || "",
+                    parse_mode: input.parseMode || "HTML",
+                }),
+            });
+            telegramResponse = await res.json();
         }
-        : {
-                chat_id: input.chatId.trim(),
-                text: input.message,
-                parse_mode: input.parseMode || "HTML"
-        };
-
-        const res = await fetch(endpoint, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(requestBody),
-        });
-        telegramResponse = await res.json();
     } catch (err: any) {
+        if (err instanceof AppError) throw err;
         throw new AppError("Gagal menghubungi server Telegram saat mengirim pesan", 502);
     }
-
     if (!telegramResponse.ok) {
         const errorDesc = telegramResponse.description || "Gagal mengirim pesan";
         throw new AppError(`Gagal mengirim ke Telegram: ${errorDesc}`, 400);
     }
-
     return {
         success: true,
         message: `Pesan uji coba berhasil terkirim ke ${input.chatId}`,

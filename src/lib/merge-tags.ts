@@ -102,29 +102,32 @@ export const applyMergeTags = (
         cta_link: extra?.ctaLink || "#",
     };
 
-    // Regex pengganti tag: {{ tag_name }}
-    return content.replace(/\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}/g, (match, rawKey) => {
+    const resolveKey = (rawKey: string): string | null => {
         const key = rawKey.toLowerCase();
+        if (dictionary[key] !== undefined) return dictionary[key];
+        if (attrs[rawKey] !== undefined) return String(attrs[rawKey]);
+        if (attrs[key] !== undefined) return String(attrs[key]);
+        if (extra && extra[rawKey] !== undefined) return String(extra[rawKey]);
+        return null;
+    };
 
-        // Cek di kamus utama
-        if (dictionary[key] !== undefined) {
-            return dictionary[key];
-        }
-
-        // Cek di atribut kustom kontak (misal user membuat variabel kustom baru {{poin_member}})
-        if (attrs[rawKey] !== undefined) {
-            return String(attrs[rawKey]);
-        }
-        if (attrs[key] !== undefined) {
-            return String(attrs[key]);
-        }
-
-        // Cek di extra context
-        if (extra && extra[rawKey] !== undefined) {
-            return String(extra[rawKey]);
-        }
-
-        // Jika tidak ada data, biarkan string kosong
-        return "";
+    // 1. Replace {{ tag_name }}
+    let result = content.replace(/\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}/g, (_, rawKey) => {
+        const val = resolveKey(rawKey);
+        return val !== null ? val : "";
     });
+
+    // 2. Replace [ tag_name ]
+    result = result.replace(/\[\s*([a-zA-Z0-9_-]+)\s*\]/g, (match, rawKey) => {
+        const val = resolveKey(rawKey);
+        return val !== null ? val : match;
+    });
+
+    // 3. Replace { tag_name }
+    result = result.replace(/\{\s*([a-zA-Z0-9_-]+)\s*\}/g, (match, rawKey) => {
+        const val = resolveKey(rawKey);
+        return val !== null ? val : match;
+    });
+
+    return result;
 };

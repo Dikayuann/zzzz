@@ -416,120 +416,160 @@ export const importContacts = async ( tenantId:number, actorId: number, data: Im
     let skippedCount = 0;
     const errors: Array<{ row: number; name?: string; error: string }> = [];
 
-    // proses setiap baris kontak
-    for (let i = 0; i < data.contacts.length; i++) {
-        const row = data.contacts[i];
-        const rowNum = i + 1;
+    // 1. Kumpulkan semua email dan nomor telepon untuk pre-fetch sekaligus (1 Query SQL)
+    const candidateEmails: string[] = [];
+    const candidatePhones: string[] = [];
 
-        const normalizedWA = normalizePhoneNumber(row.whatsappNumber || row.phone);
-        const email = row.email && row.email.trim().length > 0 ? row.email.trim() : null;
+    for (const r of data.contacts) {
+        const normWA = normalizePhoneNumber(r.whatsappNumber || r.phone);
+        if (normWA) candidatePhones.push(normWA);
+        if (r.email && r.email.trim().length > 0) candidateEmails.push(r.email.trim().toLowerCase());
+    }
 
-        // wajib minimal ada email atau whatsApp
-        if (!email && !normalizedWA) {
-            errors.push({
-                row: rowNum,
-                name: row.name,
-                error: "Minimal salah satu dari Email atau WhatsApp harus diisi",
-            });
-            skippedCount++;
-            continue;
-        }
+    // 2. Pre-fetch seluruh kontak yang berpotensi duplikat dalam 1 KALI QUERY
+    const conflictConditions: any[] = [];
+    if (candidateEmails.length > 0) conflictConditions.push({ email: { in: candidateEmails } });
+    if (candidatePhones.length > 0) conflictConditions.push({ whatsappNumber: { in: candidatePhones } });
 
-        // Cek apakah sudah ada kontak aktif dengan nomor/email yang sama di tenant ini
-        const conflictOr: any[] = [];
-        if (email) conflictOr.push({ email });
-        if (normalizedWA) conflictOr.push({ whatsappNumber: normalizedWA  });
+    const existingContacts = conflictConditions.length > 0
+        ? await prisma.contact.findMany({
+            where: {
+                tenantId,
+                deletedAt: null,
+                OR: conflictConditions,
+            },
+            select: {
+                id: true,
+                name: true,
+                email: true,
+                phone: true,
+                whatsappNumber: true,
+                teleChatId: true,
+            },
+        })
+        : [];
 
-        const existing = await prisma.contact.findFirst({
-            where: { tenantId, deletedAt: null, OR: conflictOr }
-        });
+    // Buat index pencarian instan O(1) di memori RAM
+    const existingByEmail = new Map<string, typeof existingContacts[0]>();
+    const existingByPhone = new Map<string, typeof existingContacts[0]>();
 
-        if (existing) {
-            if (data.duplicateStrategy === "skip") {
-                skippedCount++;
-                continue;
-            } else if (data.duplicateStrategy === "update") {
-                // update profil kontak yang sudah ada
-                await prisma.$transaction(async (tx) => {
-                    await tx.contact.update({
-                        where: { id: existing.id },
-                        data: {
-                            name: row.name || existing.name,
-                            phone: row.phone || existing.phone,
-                            teleChatId: row.teleChatId || existing.teleChatId,
-                            customFields: row.customFields !== undefined ? row.customFields : undefined,
-                        },
+    for (const c of existingContacts) {
+        if (c.email) existingByEmail.set(c.email.toLowerCase(), c);
+        if (c.whatsappNumber) existingByPhone.set(c.whatsappNumber, c);
+    }
+
+    // 3. Proses kontak dalam batch chunk (50 baris per transaksi) agar cepat dan hemat round trip
+    const BATCH_SIZE = 50;
+
+    for (let batchStart = 0; batchStart < data.contacts.length; batchStart += BATCH_SIZE) {
+        const batch = data.contacts.slice(batchStart, batchStart + BATCH_SIZE);
+
+        await prisma.$transaction(async (tx) => {
+            for (let j = 0; j < batch.length; j++) {
+                const row = batch[j];
+                const rowNum = batchStart + j + 1;
+
+                const normalizedWA = normalizePhoneNumber(row.whatsappNumber || row.phone);
+                const email = row.email && row.email.trim().length > 0 ? row.email.trim() : null;
+
+                // wajib minimal ada email atau whatsApp
+                if (!email && !normalizedWA) {
+                    errors.push({
+                        row: rowNum,
+                        name: row.name,
+                        error: "Minimal salah satu dari Email atau WhatsApp harus diisi",
                     });
-                    // menghubungkan ke list target jika belum tergabung
-                    if (data.listId) {
-                        await tx.listContact.upsert({
-                            where: { listId_contactId: { listId: data.listId, contactId: existing.id } },
-                            update: {},
-                            create: { listId: data.listId, contactId: existing.id },
+                    skippedCount++;
+                    continue;
+                }
+
+                // Cek duplikat via memory lookup O(1)
+                const existing =
+                    (email ? existingByEmail.get(email.toLowerCase()) : null) ||
+                    (normalizedWA ? existingByPhone.get(normalizedWA) : null);
+
+                if (existing) {
+                    if (data.duplicateStrategy === "skip") {
+                        skippedCount++;
+                        continue;
+                    } else if (data.duplicateStrategy === "update") {
+                        await tx.contact.update({
+                            where: { id: existing.id },
+                            data: {
+                                name: row.name || existing.name,
+                                phone: row.phone || existing.phone,
+                                teleChatId: row.teleChatId || existing.teleChatId,
+                                customFields: row.customFields !== undefined ? row.customFields : undefined,
+                            },
                         });
-                    }
-                    // hubungkan ke tag target jika belum ada
-                    const targetTags = data.tagsIds;
-                    if (targetTags && targetTags.length > 0) {
-                        for (const tagId of targetTags) {
-                            await tx.contactTag.upsert({
-                                where: {
-                                    contactId_tagId: { contactId: existing.id, tagId },
-                                },
+
+                        if (data.listId) {
+                            await tx.listContact.upsert({
+                                where: { listId_contactId: { listId: data.listId, contactId: existing.id } },
                                 update: {},
-                                create: { contactId: existing.id, tagId },
+                                create: { listId: data.listId, contactId: existing.id },
                             });
                         }
+
+                        const targetTags = data.tagsIds;
+                        if (targetTags && targetTags.length > 0) {
+                            for (const tagId of targetTags) {
+                                await tx.contactTag.upsert({
+                                    where: { contactId_tagId: { contactId: existing.id, tagId } },
+                                    update: {},
+                                    create: { contactId: existing.id, tagId },
+                                });
+                            }
+                        }
+                        updatedCount++;
                     }
-                });
-                updatedCount++;
+                } else {
+                    // Kontak baru
+                    const created = await tx.contact.create({
+                        data: {
+                            tenantId,
+                            name: row.name,
+                            email,
+                            phone: row.phone || null,
+                            whatsappNumber: normalizedWA || null,
+                            teleChatId: row.teleChatId || null,
+                            status: "active",
+                            customFields: row.customFields || undefined,
+                        },
+                    });
+
+                    // Simpan ke memori agar row duplikat berikutnya dalam file yang sama langsung terdeteksi
+                    if (email) existingByEmail.set(email.toLowerCase(), created as any);
+                    if (normalizedWA) existingByPhone.set(normalizedWA, created as any);
+
+                    const consentsData: any[] = [];
+                    if (email)
+                        consentsData.push({ contactId: created.id, channel: "email", status: "opted_in" });
+                    if (normalizedWA)
+                        consentsData.push({ contactId: created.id, channel: "whatsapp", status: "opted_in" });
+                    if (row.teleChatId)
+                        consentsData.push({ contactId: created.id, channel: "telegram", status: "opted_in" });
+
+                    if (consentsData.length > 0) {
+                        await tx.consent.createMany({ data: consentsData });
+                    }
+
+                    if (data.listId) {
+                        await tx.listContact.create({
+                            data: { listId: data.listId, contactId: created.id },
+                        });
+                    }
+
+                    const targetTags = data.tagsIds;
+                    if (targetTags && targetTags.length > 0) {
+                        await tx.contactTag.createMany({
+                            data: targetTags.map((tagId) => ({ contactId: created.id, tagId })),
+                        });
+                    }
+                    importedCount++;
+                }
             }
-        } else {
-            // kontak baru
-            await prisma.$transaction(async (tx) => {
-                const created = await tx.contact.create({
-                    data: {
-                        tenantId,
-                        name: row.name,
-                        email,
-                        phone: row.phone || null,
-                        whatsappNumber: normalizedWA || null,
-                        teleChatId: row.teleChatId || null,
-                        status: "active",
-                        customFields: row.customFields || undefined,
-                    },
-                });
-
-                // catat status persetujuan (consent) otomatis
-                const consentsData: any[] = [];
-                if (email)
-                    consentsData.push({ contactId: created.id, channel: "email", status: "opted_in" });
-                if (normalizedWA)
-                    consentsData.push({ contactId: created.id, channel: "whatsapp", status: "opted_in" });
-                if (row.teleChatId)
-                    consentsData.push({ contactId: created.id, channel: "telegram", status: "opted_in" });
-
-                if (consentsData.length > 0) {
-                    await tx.consent.createMany({ data: consentsData });
-                }
-
-                // hubungkan ke list jika ada
-                if (data.listId) {
-                    await tx.listContact.create({
-                        data: { listId: data.listId, contactId: created.id },
-                    });
-                }
-
-                // hubungkan ke tag jika ada
-                const targetTags = data.tagsIds;
-                if (targetTags && targetTags.length > 0) {
-                    await tx.contactTag.createMany({
-                        data: targetTags.map((tagId) => ({ contactId: created.id, tagId })),
-                    });
-                }
-            });
-            importedCount++;
-        }
+        });
     }
 
     // Catat riwayat import ke tabel audit_logs setelah SEMUA baris selesai diproses

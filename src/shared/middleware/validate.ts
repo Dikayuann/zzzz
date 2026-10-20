@@ -33,7 +33,7 @@ export const validate = (schemas: {
                     errors: result.error.issues.map((i) => i.message),
                 });
             }
-            req.query = result.data as any;
+            Object.defineProperty(req, "query", { value: result.data, writable: true, configurable: true });
         }
 
         if (schemas.params) {
@@ -44,7 +44,7 @@ export const validate = (schemas: {
                     errors: result.error.issues.map((i) => i.message),
                 });
             }
-            req.params = result.data as any;
+            Object.defineProperty(req, "params", { value: result.data, writable: true, configurable: true });
         }
 
         next();

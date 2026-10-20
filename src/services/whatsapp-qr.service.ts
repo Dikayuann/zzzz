@@ -12,6 +12,13 @@ const activeSockets: Map<number, WASocket> = new Map();
 const activeQrCodes: Map<number, { qrRaw: string; qrDataUrl:string } > = new Map();
 const activeSendingTenants: Set<number> = new Set();
 
+// Batas pengiriman harian per nomor (anti-ban). Ubah angka ini bila ingin menaikkan.
+export const QR_DAILY_QUOTA = 35;
+
+// Kuota efektif = nilai terkecil antara setting DB dan batas kode (agar data lama 300 tidak lolos).
+const getEffectiveDailyQuota = (dailyQuota?: number | null) =>
+    Math.min(dailyQuota || QR_DAILY_QUOTA, QR_DAILY_QUOTA);
+
 // helper untuk direktori sesi auth
 const getSessionDir = (tenantId: number) => {
     const dir = path.join(process.cwd(), "sessions", `tenant_${tenantId}`);
@@ -315,7 +322,7 @@ export const getWhatsappQrStatus = async (tenantId: number) => {
         qrDataUrl: cachedQr?.qrDataUrl || null,
         connectedAt: sessionDb?.connectedAt || null,
         dailyCount: currentDailyCount,
-        dailyQuota: sessionDb?.dailyQuota || 300,
+        dailyQuota: getEffectiveDailyQuota(sessionDb?.dailyQuota),
     };
 };
 
@@ -396,9 +403,10 @@ export const sendWhatsappQrMessage = async (
     const activeDailyCount = await checkAndResetDailyQuota(sessionDb);
 
     // cek kuota pengiriman harian
-    if (activeDailyCount >= sessionDb.dailyQuota) {
+    const effectiveDailyQuota = getEffectiveDailyQuota(sessionDb.dailyQuota);
+    if (activeDailyCount >= effectiveDailyQuota) {
         throw new AppError(
-            `Batas kuota pengiriman harian (${sessionDb.dailyQuota} pesan) telah tercapai untuk nomor ini. Kuota akan direset otomatis pukul 00:00 WIB.`, 429);
+            `Batas kuota pengiriman harian (${effectiveDailyQuota} pesan) telah tercapai untuk nomor ini. Kuota akan direset otomatis pukul 00:00 WIB.`, 429);
     }
 
     // format nomor Whatsapp

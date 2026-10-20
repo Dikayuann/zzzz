@@ -347,7 +347,7 @@ model WhatsappQrSession {
   connectedAt       DateTime? @map("connected_at")
   lastActiveAt      DateTime? @map("last_active_at")
   dailyCount        Int       @default(0) @map("daily_count") // berapa pesan yang sudah terkirim hari ini
-  dailyQuota        Int       @default(300) @map("daily_quota") // batas aman
+  dailyQuota        Int       @default(35) @map("daily_quota") // batas aman anti-ban
   lastMessageSentAt DateTime? @map("last_message_sent_at")
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
