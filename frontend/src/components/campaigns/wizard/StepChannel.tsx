@@ -1,11 +1,6 @@
 import React from "react";
-import { Mail, MessageSquare, Send, Check, ChevronDown } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Mail, MessageSquare, Send, Check } from "lucide-react";
+import { toast } from "sonner";
 import type { DeliveryChannel, SenderProfile } from "@/types/campaignWizard";
 
 interface StepChannelProps {
@@ -20,6 +15,11 @@ interface StepChannelProps {
   waSender: string;
   telegramBot: string;
   senderProfiles: SenderProfile[];
+  channelStatus?: {
+    email: { connected: boolean; fromEmail: string; fromName: string };
+    whatsapp: { connected: boolean; phoneNumber: string; pushName: string };
+    telegram: { connected: boolean; botUsername: string };
+  };
 }
 
 export const StepChannel: React.FC<StepChannelProps> = ({
@@ -28,15 +28,20 @@ export const StepChannel: React.FC<StepChannelProps> = ({
   selectedChannels,
   onToggleChannel,
   emailSender,
-  onEmailSenderChange,
+  onEmailSenderChange: _onEmailSenderChange,
   replyToEmail,
   onReplyToEmailChange,
   waSender,
   telegramBot,
   senderProfiles,
+  channelStatus,
 }) => {
   const currentSenderProfile =
     senderProfiles.find((p) => p.id === emailSender) || senderProfiles[0];
+
+  const isEmailConnected = channelStatus?.email?.connected ?? false;
+  const isWaConnected = channelStatus?.whatsapp?.connected ?? false;
+  const isTgConnected = channelStatus?.telegram?.connected ?? false;
 
   return (
     <div className="space-y-6 animate-in fade-in-50 duration-200">
@@ -45,7 +50,7 @@ export const StepChannel: React.FC<StepChannelProps> = ({
           Pilih Saluran & Identitas Pengirim
         </h2>
         <p className="text-xs text-slate-500 mt-0.5">
-          Bisa memilih lebih dari satu saluran pengiriman sekaligus (Multi-Channel).
+          Pilih 1 saluran pengiriman utama untuk kampanye broadcast ini.
         </p>
       </div>
 
@@ -67,27 +72,37 @@ export const StepChannel: React.FC<StepChannelProps> = ({
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <label className="text-xs font-semibold text-slate-800">
-            Saluran Pengiriman (Bisa pilih lebih dari satu) <span className="text-rose-500">*</span>
+            Saluran Pengiriman <span className="text-rose-500">*</span>
           </label>
           <span className="text-[11px] text-slate-400 font-medium">
-            {selectedChannels.length} saluran terpilih
+              Saluran terpilih: <strong className="text-sky-600">{selectedChannels[0]}</strong>
           </span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {/* Email Card */}
           <div
-            onClick={() => onToggleChannel("Email")}
-            className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex flex-col gap-2 relative ${
-              selectedChannels.includes("Email")
-                ? "border-sky-500 bg-sky-50/20 shadow-xs"
-                : "border-slate-200/80 hover:border-slate-300 bg-white opacity-80"
+            onClick={() => {
+              if (!isEmailConnected) {
+                toast.error("Saluran Email SMTP belum dikonfigurasi. Silakan atur di menu Saluran.");
+                return;
+              }
+              onToggleChannel("Email");
+            }}
+            className={`p-4 rounded-2xl border-2 transition-all flex flex-col gap-2 relative ${
+              !isEmailConnected
+                ? "border-slate-200 bg-slate-50 opacity-50 cursor-not-allowed"
+                : selectedChannels.includes("Email")
+                ? "border-sky-500 bg-sky-50/20 shadow-xs cursor-pointer"
+                : "border-slate-200/80 hover:border-slate-300 bg-white cursor-pointer"
             }`}
           >
             <div className="flex items-center justify-between">
               <div
                 className={`flex h-9 w-9 items-center justify-center rounded-xl ${
-                  selectedChannels.includes("Email")
+                  !isEmailConnected
+                    ? "bg-slate-200 text-slate-400"
+                    : selectedChannels.includes("Email")
                     ? "bg-sky-500 text-white"
                     : "bg-slate-100 text-slate-600"
                 }`}
@@ -96,18 +111,31 @@ export const StepChannel: React.FC<StepChannelProps> = ({
               </div>
               <div
                 className={`h-5 w-5 rounded-md border flex items-center justify-center ${
-                  selectedChannels.includes("Email")
+                  !isEmailConnected
+                    ? "border-slate-300 bg-slate-100"
+                    : selectedChannels.includes("Email")
                     ? "bg-sky-500 border-sky-500 text-white"
                     : "border-slate-300 bg-white"
                 }`}
               >
-                {selectedChannels.includes("Email") && (
+                {isEmailConnected && selectedChannels.includes("Email") && (
                   <Check className="h-3.5 w-3.5 stroke-[3]" />
                 )}
               </div>
             </div>
             <div>
-              <h4 className="font-bold text-xs text-slate-900">Email SMTP</h4>
+              <div className="flex items-center justify-between">
+                <h4 className="font-bold text-xs text-slate-900">Email SMTP</h4>
+                <span
+                  className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md ${
+                    isEmailConnected
+                      ? "bg-sky-100 text-sky-800"
+                      : "bg-slate-200 text-slate-600"
+                  }`}
+                >
+                  {isEmailConnected ? "Terhubung" : "Belum Terhubung"}
+                </span>
+              </div>
               <p className="text-[11px] text-slate-500 mt-0.5">
                 HTML email dengan tracking open & click
               </p>
@@ -116,17 +144,27 @@ export const StepChannel: React.FC<StepChannelProps> = ({
 
           {/* WhatsApp Card */}
           <div
-            onClick={() => onToggleChannel("WhatsApp")}
-            className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex flex-col gap-2 relative ${
-              selectedChannels.includes("WhatsApp")
-                ? "border-emerald-500 bg-emerald-50/20 shadow-xs"
-                : "border-slate-200/80 hover:border-slate-300 bg-white opacity-80"
+            onClick={() => {
+              if (!isWaConnected) {
+                toast.error("Saluran WhatsApp belum terhubung. Silakan scan QR di menu Saluran.");
+                return;
+              }
+              onToggleChannel("WhatsApp");
+            }}
+            className={`p-4 rounded-2xl border-2 transition-all flex flex-col gap-2 relative ${
+              !isWaConnected
+                ? "border-slate-200 bg-slate-50 opacity-50 cursor-not-allowed"
+                : selectedChannels.includes("WhatsApp")
+                ? "border-emerald-500 bg-emerald-50/20 shadow-xs cursor-pointer"
+                : "border-slate-200/80 hover:border-slate-300 bg-white cursor-pointer"
             }`}
           >
             <div className="flex items-center justify-between">
               <div
                 className={`flex h-9 w-9 items-center justify-center rounded-xl ${
-                  selectedChannels.includes("WhatsApp")
+                  !isWaConnected
+                    ? "bg-slate-200 text-slate-400"
+                    : selectedChannels.includes("WhatsApp")
                     ? "bg-emerald-500 text-white"
                     : "bg-slate-100 text-slate-600"
                 }`}
@@ -135,18 +173,31 @@ export const StepChannel: React.FC<StepChannelProps> = ({
               </div>
               <div
                 className={`h-5 w-5 rounded-md border flex items-center justify-center ${
-                  selectedChannels.includes("WhatsApp")
+                  !isWaConnected
+                    ? "border-slate-300 bg-slate-100"
+                    : selectedChannels.includes("WhatsApp")
                     ? "bg-emerald-500 border-emerald-500 text-white"
                     : "border-slate-300 bg-white"
                 }`}
               >
-                {selectedChannels.includes("WhatsApp") && (
+                {isWaConnected && selectedChannels.includes("WhatsApp") && (
                   <Check className="h-3.5 w-3.5 stroke-[3]" />
                 )}
               </div>
             </div>
             <div>
-              <h4 className="font-bold text-xs text-slate-900">WhatsApp Gateway</h4>
+              <div className="flex items-center justify-between">
+                <h4 className="font-bold text-xs text-slate-900">WhatsApp Gateway</h4>
+                <span
+                  className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md ${
+                    isWaConnected
+                      ? "bg-emerald-100 text-emerald-800"
+                      : "bg-slate-200 text-slate-600"
+                  }`}
+                >
+                  {isWaConnected ? "Terhubung" : "Belum Terhubung"}
+                </span>
+              </div>
               <p className="text-[11px] text-slate-500 mt-0.5">
                 Pesan instan langsung ke nomor WhatsApp
               </p>
@@ -155,17 +206,27 @@ export const StepChannel: React.FC<StepChannelProps> = ({
 
           {/* Telegram Card */}
           <div
-            onClick={() => onToggleChannel("Telegram")}
-            className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex flex-col gap-2 relative ${
-              selectedChannels.includes("Telegram")
-                ? "border-blue-500 bg-blue-50/20 shadow-xs"
-                : "border-slate-200/80 hover:border-slate-300 bg-white opacity-80"
+            onClick={() => {
+              if (!isTgConnected) {
+                toast.error("Saluran Telegram belum terhubung. Silakan atur token di menu Saluran.");
+                return;
+              }
+              onToggleChannel("Telegram");
+            }}
+            className={`p-4 rounded-2xl border-2 transition-all flex flex-col gap-2 relative ${
+              !isTgConnected
+                ? "border-slate-200 bg-slate-50 opacity-50 cursor-not-allowed"
+                : selectedChannels.includes("Telegram")
+                ? "border-blue-500 bg-blue-50/20 shadow-xs cursor-pointer"
+                : "border-slate-200/80 hover:border-slate-300 bg-white cursor-pointer"
             }`}
           >
             <div className="flex items-center justify-between">
               <div
                 className={`flex h-9 w-9 items-center justify-center rounded-xl ${
-                  selectedChannels.includes("Telegram")
+                  !isTgConnected
+                    ? "bg-slate-200 text-slate-400"
+                    : selectedChannels.includes("Telegram")
                     ? "bg-blue-500 text-white"
                     : "bg-slate-100 text-slate-600"
                 }`}
@@ -174,18 +235,31 @@ export const StepChannel: React.FC<StepChannelProps> = ({
               </div>
               <div
                 className={`h-5 w-5 rounded-md border flex items-center justify-center ${
-                  selectedChannels.includes("Telegram")
+                  !isTgConnected
+                    ? "border-slate-300 bg-slate-100"
+                    : selectedChannels.includes("Telegram")
                     ? "bg-blue-500 border-blue-500 text-white"
                     : "border-slate-300 bg-white"
                 }`}
               >
-                {selectedChannels.includes("Telegram") && (
+                {isTgConnected && selectedChannels.includes("Telegram") && (
                   <Check className="h-3.5 w-3.5 stroke-[3]" />
                 )}
               </div>
             </div>
             <div>
-              <h4 className="font-bold text-xs text-slate-900">Telegram Bot</h4>
+              <div className="flex items-center justify-between">
+                <h4 className="font-bold text-xs text-slate-900">Telegram Bot</h4>
+                <span
+                  className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md ${
+                    isTgConnected
+                      ? "bg-blue-100 text-blue-800"
+                      : "bg-slate-200 text-slate-600"
+                  }`}
+                >
+                  {isTgConnected ? "Terhubung" : "Belum Terhubung"}
+                </span>
+              </div>
               <p className="text-[11px] text-slate-500 mt-0.5">
                 Kirim via bot token pribadi pengguna
               </p>
@@ -213,67 +287,29 @@ export const StepChannel: React.FC<StepChannelProps> = ({
                 Pilih Email Pengirim (From Address)
               </label>
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    className="w-full h-11 rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium text-slate-800 hover:bg-slate-50 focus:outline-none focus:ring-1 focus:ring-sky-500 flex items-center justify-between shadow-2xs transition cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2 truncate">
-                      <div className="flex h-6 w-6 items-center justify-center rounded-md bg-sky-100 text-sky-600 shrink-0">
-                        <Mail className="h-3 w-3" />
-                      </div>
-                      <div className="text-left truncate">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-slate-900 text-xs truncate">
-                            {currentSenderProfile.name}
-                          </span>
-                          <span className="rounded bg-sky-100 px-1 py-0.2 text-[9px] font-bold text-sky-700">
-                            {currentSenderProfile.badge}
-                          </span>
-                        </div>
-                        <span className="text-[10px] text-slate-500 block truncate">
-                          {currentSenderProfile.email}
-                        </span>
-                      </div>
+              <div className="w-full h-11 rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium text-slate-800 flex items-center justify-between shadow-2xs">
+                <div className="flex items-center gap-2 truncate">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-md bg-sky-100 text-sky-600 shrink-0">
+                    <Mail className="h-3 w-3" />
+                  </div>
+                  <div className="text-left truncate">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-bold text-slate-900 text-xs truncate">
+                        {channelStatus?.email?.fromName || currentSenderProfile.name || "Email Pengirim Resmi"}
+                      </span>
+                      <span className="rounded bg-sky-100 px-1 py-0.2 text-[9px] font-bold text-sky-700">
+                        Aktif
+                      </span>
                     </div>
-                    <ChevronDown className="h-3.5 w-3.5 text-slate-400 shrink-0 ml-2" />
-                  </button>
-                </DropdownMenuTrigger>
-
-                <DropdownMenuContent align="start" className="w-[320px] rounded-2xl p-1.5 shadow-lg">
-                  {senderProfiles.map((prof) => (
-                    <DropdownMenuItem
-                      key={prof.id}
-                      onClick={() => onEmailSenderChange(prof.id)}
-                      className={`p-2.5 rounded-xl cursor-pointer flex items-center justify-between text-xs ${
-                        emailSender === prof.id
-                          ? "bg-sky-50 text-sky-900 font-semibold"
-                          : "hover:bg-slate-50 text-slate-700"
-                      }`}
-                    >
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-bold">{prof.name}</span>
-                          <span className="rounded bg-slate-100 px-1 py-0.2 text-[9px] font-bold text-slate-600">
-                            {prof.badge}
-                          </span>
-                        </div>
-                        <span className="text-[11px] text-slate-500 block">{prof.email}</span>
-                        <span className="text-[10px] text-emerald-600 font-medium block mt-0.5">
-                          {prof.quota}
-                        </span>
-                      </div>
-                      {emailSender === prof.id && (
-                        <Check className="h-4 w-4 text-sky-600 stroke-[2.5]" />
-                      )}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                    <span className="text-[10px] text-slate-500 block truncate">
+                      {channelStatus?.email?.fromEmail || emailSender || currentSenderProfile.email}
+                    </span>
+                  </div>
+                </div>
+              </div>
 
               <span className="text-[10px] text-slate-400 block mt-0.5">
-                {currentSenderProfile.quota}
+                Alamat pengirim otomatis menggunakan konfigurasi SMTP server
               </span>
             </div>
 
@@ -285,7 +321,7 @@ export const StepChannel: React.FC<StepChannelProps> = ({
                 type="email"
                 value={replyToEmail}
                 onChange={(e) => onReplyToEmailChange(e.target.value)}
-                placeholder="support@acmecorp.co"
+                placeholder={channelStatus?.email?.fromEmail || "no-reply@domain.com"}
                 className="w-full h-11 rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-800 focus:outline-none focus:border-sky-500 shadow-2xs"
               />
               <span className="text-[10px] text-slate-400 block mt-0.5">
@@ -305,10 +341,10 @@ export const StepChannel: React.FC<StepChannelProps> = ({
             </div>
             <div>
               <span className="font-bold text-slate-900 block">
-                Nomor Gateway WhatsApp Aktif
+                {channelStatus?.whatsapp?.pushName || "WhatsApp Gateway"}
               </span>
               <span className="text-[11px] text-slate-500 font-mono">
-                {waSender} (Sesi Server Online & Terhubung)
+                {channelStatus?.whatsapp?.phoneNumber || waSender} • Sesi WhatsApp Web Terhubung
               </span>
             </div>
           </div>
@@ -327,10 +363,10 @@ export const StepChannel: React.FC<StepChannelProps> = ({
             </div>
             <div>
               <span className="font-bold text-slate-900 block">
-                Bot Telegram Pribadi (FR-CHN-02)
+                {channelStatus?.telegram?.botUsername || telegramBot ? `${channelStatus?.telegram?.botUsername || telegramBot} (Telegram Bot)` : "Telegram Bot Resmi"}
               </span>
               <span className="text-[11px] text-slate-500 font-mono">
-                {telegramBot} (Token Tersambung)
+                {telegramBot || channelStatus?.telegram?.botUsername} • Token Bot Terverifikasi & Siap Broadcast
               </span>
             </div>
           </div>

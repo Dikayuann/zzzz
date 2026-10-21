@@ -4,7 +4,6 @@ import {
   MessageSquare,
   Send,
   Tag,
-  Bookmark,
   Check,
   Palette,
   Code2,
@@ -40,7 +39,11 @@ interface StepTemplateProps {
   emailCtaColor: string;
   emailThemeId: string;
   onOpenMergeModal: () => void;
-  onSaveTemplate: () => void;
+  onSaveTemplate?: () => void;
+  emailSenderName?: string;
+  emailSenderAddress?: string;
+  waSenderName?: string;
+  telegramBotName?: string;
 }
 
 export const StepTemplate: React.FC<StepTemplateProps> = ({
@@ -69,7 +72,11 @@ export const StepTemplate: React.FC<StepTemplateProps> = ({
   emailCtaColor,
   emailThemeId,
   onOpenMergeModal,
-  onSaveTemplate,
+  onSaveTemplate: _onSaveTemplate,
+  emailSenderName,
+  emailSenderAddress,
+  waSenderName,
+  telegramBotName,
 }) => {
   const currentContent =
     activeTemplateTab === "Email"
@@ -130,16 +137,6 @@ export const StepTemplate: React.FC<StepTemplateProps> = ({
             <Tag className="h-3.5 w-3.5" />
             <span>&lt;&gt; Pustaka Tag (28+)</span>
           </button>
-
-          {/* Save Template Button */}
-          <button
-            type="button"
-            onClick={onSaveTemplate}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold shadow-xs shadow-indigo-600/20 transition cursor-pointer"
-          >
-            <Bookmark className="h-3.5 w-3.5" />
-            <span>Save template</span>
-          </button>
         </div>
       </div>
 
@@ -147,10 +144,10 @@ export const StepTemplate: React.FC<StepTemplateProps> = ({
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
-            Pilihan Template Cepat
+            Pustaka Template Tersimpan
           </span>
           <span className="text-[11px] text-slate-400">
-            Pilih salah satu untuk memuat teks rekomendasi
+            Pilih template dari database Anda atau gunakan Tulis Pesan Langsung
           </span>
         </div>
 
@@ -229,7 +226,7 @@ export const StepTemplate: React.FC<StepTemplateProps> = ({
                     type="text"
                     value={emailSubject}
                     onChange={(e) => onEmailSubjectChange(e.target.value)}
-                    placeholder="Your monthly update is here ✉️"
+                    placeholder="Tulis subjek email..."
                     className="w-full h-10 rounded-xl border border-slate-200 bg-white px-3.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 shadow-2xs"
                   />
                 </div>
@@ -333,6 +330,10 @@ export const StepTemplate: React.FC<StepTemplateProps> = ({
             emailCtaUrl={emailCtaUrl}
             emailCtaColor={emailCtaColor}
             emailThemeId={emailThemeId}
+            waSenderName={waSenderName}
+            telegramBotName={telegramBotName}
+            emailSenderName={emailSenderName}
+            emailSenderAddress={emailSenderAddress}
           />
         </div>
       </div>

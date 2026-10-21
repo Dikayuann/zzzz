@@ -34,15 +34,15 @@ export const StepAudience: React.FC<StepAudienceProps> = ({
             <div
               key={aud.id}
               onClick={() => onSelectAudience(aud.id)}
-              className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between ${
+              className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between gap-4 ${
                 isSelected
                   ? "border-[#0284c7] bg-sky-50/20 shadow-xs"
                   : "border-slate-200/80 hover:border-slate-300 bg-white"
               }`}
             >
-              <div className="flex items-center gap-3.5">
+              <div className="flex items-center gap-3.5 min-w-0">
                 <div
-                  className={`flex h-10 w-10 items-center justify-center rounded-xl ${
+                  className={`flex h-10 w-10 items-center justify-center rounded-xl shrink-0 ${
                     isSelected
                       ? "bg-[#0284c7] text-white"
                       : "bg-slate-100 text-slate-500"
@@ -50,20 +50,20 @@ export const StepAudience: React.FC<StepAudienceProps> = ({
                 >
                   <Users className="h-5 w-5" />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <h4 className="font-bold text-xs text-slate-900">
+                    <h4 className="font-bold text-xs text-slate-900 truncate">
                       {aud.name}
                     </h4>
-                    <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">
+                    <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600 shrink-0">
                       {aud.badge}
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-500 mt-0.5">{aud.desc}</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5 truncate">{aud.desc}</p>
                 </div>
               </div>
 
-              <div className="text-right">
+              <div className="text-right shrink-0">
                 <span className="font-bold text-sm text-slate-900 block font-mono">
                   {aud.count.toLocaleString()}
                 </span>

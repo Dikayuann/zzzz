@@ -10,12 +10,10 @@ import {
   Zap,
   Palette,
   CheckCircle2,
-  CheckCheck,
 } from "lucide-react";
 import type { DeliveryChannel, SenderProfile, AudienceOption } from "@/types/campaignWizard";
 import { getEmailTheme } from "@/data/emailThemes";
-import { evaluateMergeTags } from "@/data/mergeTags";
-import { renderFormattedPreview } from "./WizardLivePreview";
+import { WizardLivePreview } from "./WizardLivePreview";
 
 interface StepReviewProps {
   selectedChannels: DeliveryChannel[];
@@ -267,20 +265,19 @@ export const StepReview: React.FC<StepReviewProps> = ({
       </div>
 
       {/* Interactive Multi-Channel Live Preview */}
-      <div className="rounded-2xl border border-slate-200/90 bg-white shadow-xs overflow-hidden">
-        {/* Tab Header Bar */}
-        <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/70 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+      <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 gap-2.5">
           <div>
             <span className="text-xs font-bold text-slate-900 block">
               Pratinjau Pesan yang Akan Diterima Pelanggan
             </span>
             <p className="text-[11px] text-slate-500 mt-0.5">
-              Pilih tab saluran di bawah untuk memeriksa tampilan visual akhir sebelum dikirim.
+              Pilih tab saluran di bawah untuk memeriksa tampilan visual akhir (tersedia mode Desktop dan Mobile).
             </p>
           </div>
 
           {/* Switcher Tabs */}
-          <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200/80 shadow-2xs">
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/80 shadow-2xs">
             {selectedChannels.map((channel) => {
               const isCurrent = activeTab === channel;
               return (
@@ -290,7 +287,7 @@ export const StepReview: React.FC<StepReviewProps> = ({
                   onClick={() => onReviewChannelTabChange(channel)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                     isCurrent
-                      ? "bg-slate-900 text-white shadow-xs"
+                      ? "bg-white text-slate-900 shadow-2xs"
                       : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
                   }`}
                 >
@@ -304,198 +301,23 @@ export const StepReview: React.FC<StepReviewProps> = ({
           </div>
         </div>
 
-        {/* Channel Preview Content */}
-        <div className="p-5 bg-slate-50/40">
-          {activeTab === "Email" && (
-            <div className="max-w-2xl mx-auto rounded-2xl border border-slate-200 shadow-sm overflow-hidden bg-white">
-              <div className="p-4 bg-slate-50/80 border-b border-slate-100 space-y-2">
-                <div className="flex items-start justify-between gap-3">
-                  <h4 className="text-sm font-bold text-slate-900 leading-snug">
-                    {emailSubject || "(Subjek Email Belum Diisi)"}
-                  </h4>
-                  <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-200/80 text-slate-700 font-semibold flex-shrink-0">
-                    {getEmailTheme(emailThemeId).name}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-slate-500 flex-wrap">
-                  <span className="font-semibold text-slate-800">{currentSenderProfile.name}</span>
-                  <span className="text-[11px] text-slate-400">&lt;{currentSenderProfile.email}&gt;</span>
-                  <span className="text-slate-300">•</span>
-                  <span className="text-[11px] text-slate-500">Kepada: {currentAudienceObj.name}</span>
-                </div>
-              </div>
-
-              {(() => {
-                const theme = getEmailTheme(emailThemeId);
-                const cfg = theme.config;
-                const showHeader = cfg.headerPadding !== "0" && cfg.headerPadding !== "";
-                const ctaBgClass =
-                  emailCtaColor === "emerald" ? "bg-emerald-600" :
-                  emailCtaColor === "rose" ? "bg-rose-600" :
-                  emailCtaColor === "amber" ? "bg-amber-600" :
-                  emailCtaColor === "dark" ? "bg-slate-900" :
-                  "bg-indigo-600";
-
-                return (
-                  <div style={{ background: cfg.outerBg, padding: "20px 16px" }}>
-                    <div
-                      style={{
-                        background: cfg.cardBg,
-                        borderRadius: cfg.cardRadius,
-                        boxShadow: cfg.cardShadow,
-                        margin: "0 auto",
-                        maxWidth: "560px",
-                        overflow: "hidden",
-                      }}
-                    >
-                      {showHeader && (
-                        <div
-                          style={{
-                            background: cfg.headerBg,
-                            padding: cfg.headerPadding,
-                            borderBottom: cfg.headerBorderBottom !== "none" ? cfg.headerBorderBottom : undefined,
-                          }}
-                        >
-                          <div
-                            style={{
-                              background: cfg.logoBg !== "transparent" && cfg.logoBg !== "" ? cfg.logoBg : undefined,
-                              borderRadius: cfg.logoRadius || "6px",
-                              padding: cfg.logoPadding || "4px 10px",
-                              display: "inline-block",
-                            }}
-                          >
-                            <span
-                              style={{
-                                color: cfg.logoText,
-                                fontSize: cfg.logoFontSize,
-                                fontWeight: cfg.logoFontWeight,
-                                letterSpacing: cfg.logoLetterSpacing,
-                                display: "block",
-                              }}
-                            >
-                              {emailBrandName || "ACME CORP"}
-                            </span>
-                          </div>
-                          {cfg.taglineText && (
-                            <p style={{ color: cfg.taglineFg, fontSize: "10px", margin: "4px 0 0", opacity: 0.85 }}>
-                              {cfg.taglineText}
-                            </p>
-                          )}
-                        </div>
-                      )}
-
-                      <div
-                        style={{
-                          background: cfg.bodyBg,
-                          color: cfg.bodyFg,
-                          padding: cfg.bodyPadding,
-                          fontSize: cfg.bodyFontSize,
-                          lineHeight: cfg.bodyLineHeight,
-                        }}
-                      >
-                        <div className="space-y-2.5">
-                          {renderFormattedPreview(emailContent, "Email") || (
-                            <span style={{ color: cfg.bodyFg, opacity: 0.45, fontStyle: "italic" }}>
-                              (Konten email belum diisi)
-                            </span>
-                          )}
-                        </div>
-
-                        {emailCtaEnabled && emailCtaText && (
-                          <div style={{ paddingTop: "20px", textAlign: "center" }}>
-                            <span
-                              className={`inline-block font-bold text-xs text-white shadow-sm ${ctaBgClass}`}
-                              style={{
-                                background: cfg.ctaBg !== "#4f46e5" && cfg.ctaBg !== "#0f172a" ? cfg.ctaBg : undefined,
-                                color: cfg.ctaFg,
-                                borderRadius: cfg.ctaRadius,
-                                padding: cfg.ctaPadding,
-                                textDecoration: "none",
-                                display: "inline-block",
-                              }}
-                            >
-                              {evaluateMergeTags(emailCtaText)}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-
-                      <div
-                        style={{
-                          background: cfg.footerBg,
-                          color: cfg.footerFg,
-                          padding: cfg.footerPadding,
-                          borderTop: cfg.footerBorderTop,
-                          fontSize: cfg.footerFontSize,
-                          lineHeight: "1.6",
-                        }}
-                      >
-                        <p style={{ margin: "0 0 4px" }}>
-                          Anda menerima email ini karena terdaftar sebagai pelanggan kami di {emailBrandName || "Acme Corp"}.
-                        </p>
-                        <p style={{ margin: 0 }}>
-                          <span style={{ color: cfg.footerFg, opacity: 0.8, textDecoration: "underline" }}>
-                            Berhenti berlangganan (Unsubscribe)
-                          </span>
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-          )}
-
-          {activeTab === "WhatsApp" && (
-            <div className="max-w-md mx-auto rounded-2xl border border-slate-300 bg-[#efeae2] shadow-sm overflow-hidden">
-              <div className="bg-[#075e54] text-white px-3.5 py-2.5 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="h-7 w-7 rounded-full bg-emerald-700 text-white font-bold text-xs flex items-center justify-center">
-                    <MessageSquare className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <span className="font-bold text-xs block">{emailBrandName || "Acme Official"}</span>
-                    <span className="text-[10px] text-emerald-100/80 block">Official Business Account</span>
-                  </div>
-                </div>
-                <span className="text-[10px] bg-emerald-800/80 px-2 py-0.5 rounded text-emerald-100 font-semibold">WhatsApp</span>
-              </div>
-              <div className="p-4 space-y-2">
-                <div className="bg-white rounded-2xl rounded-tl-none p-3.5 shadow-2xs max-w-[92%] space-y-2">
-                  <div className="text-xs text-slate-800 leading-relaxed whitespace-pre-line">
-                    {renderFormattedPreview(waContent, "WhatsApp") || (
-                      <span className="text-slate-400 italic">(Konten WhatsApp belum diisi)</span>
-                    )}
-                  </div>
-                  <div className="text-[10px] text-slate-400 text-right flex items-center justify-end gap-1">
-                    <span>10:00</span>
-                    <CheckCheck className="h-3.5 w-3.5 text-sky-500" />
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === "Telegram" && (
-            <div className="max-w-md mx-auto rounded-2xl border border-slate-700 bg-[#0f172a] shadow-sm overflow-hidden p-4 space-y-3">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-800 text-slate-400 text-xs">
-                <span className="flex items-center gap-1.5 font-bold text-slate-200">
-                  <Send className="h-3.5 w-3.5 text-sky-400" /> Telegram Channel Preview
-                </span>
-                <span className="text-[10px] text-slate-500 font-semibold">Bot Broadcast</span>
-              </div>
-              <div className="bg-[#1e293b] rounded-2xl p-4 shadow-xs space-y-2 border border-slate-700/60">
-                <span className="text-xs font-bold text-sky-400 block">{emailBrandName || "Acme Bot"}</span>
-                <div className="text-xs text-slate-200 leading-relaxed whitespace-pre-line">
-                  {renderFormattedPreview(telegramContent, "Telegram") || (
-                    <span className="text-slate-400 italic">(Konten Telegram belum diisi)</span>
-                  )}
-                </div>
-                <span className="text-[10px] text-slate-500 block text-right">10:00</span>
-              </div>
-            </div>
-          )}
-        </div>
+        <WizardLivePreview
+          activeChannel={activeTab}
+          emailContent={emailContent}
+          emailSubject={emailSubject}
+          waContent={waContent}
+          telegramContent={telegramContent}
+          emailBrandName={emailBrandName}
+          emailHeaderStyle="clean"
+          emailCtaEnabled={emailCtaEnabled}
+          emailCtaText={emailCtaText}
+          emailCtaColor={emailCtaColor}
+          emailThemeId={emailThemeId}
+          emailSenderName={currentSenderProfile.name}
+          emailSenderAddress={currentSenderProfile.email}
+          waSenderName={currentSenderProfile.name}
+          telegramBotName={currentSenderProfile.name}
+        />
       </div>
     </div>
   );

@@ -116,6 +116,31 @@ export function useCampaigns() {
     }
   };
 
+  // 6. FUNGSI KIRIM SEKARANG (POST /api/v1/campaigns/:id/send-now)
+  const sendCampaignNow = async (id: string, name: string) => {
+    try {
+      toast.info(`Memulai pengiriman kampanye "${name}"...`);
+      await api.post(`/campaigns/${id}/send-now`);
+      toast.success(`Pengiriman kampanye "${name}" berhasil dimulai!`);
+      await fetchCampaigns();
+    } catch (err: any) {
+      const msg = err.response?.data?.message || "Gagal memulai pengiriman kampanye";
+      toast.error(msg);
+    }
+  };
+
+  // 7. AUTO-POLLING: Refresh berkala jika ada kampanye yang sedang mengirim (status "Sending")
+  useEffect(() => {
+    const hasActiveSending = campaigns.some((c) => c.status === "Sending");
+    if (!hasActiveSending) return;
+
+    const interval = setInterval(() => {
+      fetchCampaigns();
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [campaigns, fetchCampaigns]);
+
   // Return data dan fungsi agar bisa dipakai di halaman mana pun
   return {
     campaigns,
@@ -125,5 +150,6 @@ export function useCampaigns() {
     fetchCampaigns,
     deleteCampaign,
     cancelCampaign,
+    sendCampaignNow,
   };
 }

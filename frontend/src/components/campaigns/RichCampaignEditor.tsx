@@ -17,7 +17,6 @@ import {
   Undo2,
   Redo2,
   Eraser,
-  Sparkles,
   ChevronDown,
   Tag,
 } from "lucide-react";
@@ -370,41 +369,20 @@ export const RichCampaignEditor: React.FC<RichCampaignEditorProps> = ({
         <EditorContent editor={editor} />
       </div>
 
-      {/* Bottom Status Bar with Undo Hint & Stats */}
-      <div className="border-t border-slate-100 bg-slate-50/50 px-3.5 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-[11px] text-slate-500">
-        <div className="flex items-center gap-3">
-          <span className="font-mono">
-            <strong>{charCount}</strong> karakter • <strong>{wordCount}</strong> kata
-          </span>
-          <span className="hidden md:inline text-slate-300">|</span>
-          <span className="hidden md:inline text-slate-500 flex items-center gap-1">
-            <Sparkles className="h-3 w-3 text-indigo-500" />
-            Undo: <kbd className="px-1 py-0.5 rounded bg-slate-200 text-slate-700 font-mono text-[10px]">Ctrl+Z</kbd> •
-            Redo: <kbd className="px-1 py-0.5 rounded bg-slate-200 text-slate-700 font-mono text-[10px]">Ctrl+Y</kbd>
-          </span>
-        </div>
+      {/* Bottom Status Bar: Minimal & Clean */}
+      <div className="border-t border-slate-100 bg-slate-50/50 px-3.5 py-2 flex items-center justify-between text-[11px] text-slate-500">
+        <span className="font-mono">
+          <strong className="text-slate-800">{charCount}</strong> karakter • <strong className="text-slate-800">{wordCount}</strong> kata
+        </span>
 
-        {/* Quick Clickable Tag Pills & Modal Opener */}
-        <div className="flex items-center gap-1 flex-wrap">
-          <span className="text-[10px] text-slate-400 mr-0.5">Sisipkan:</span>
-          {["nama", "first_name", "voucher", "diskon", "org_name"].map((tag) => (
-            <button
-              key={tag}
-              type="button"
-              onClick={() => handleInsertTag(tag)}
-              className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-white hover:bg-indigo-50 text-indigo-600 border border-slate-200/80 transition cursor-pointer"
-            >
-              {`{{${tag}}}`}
-            </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => setShowMergeModal(true)}
-            className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-indigo-100/70 hover:bg-indigo-200 text-indigo-800 transition cursor-pointer"
-          >
-            + Semua Tag (28+)
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => setShowMergeModal(true)}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold text-indigo-700 bg-indigo-50/80 hover:bg-indigo-100 border border-indigo-200/60 transition shadow-2xs cursor-pointer"
+        >
+          <Tag className="h-3 w-3 text-indigo-600" />
+          <span>Sisipkan Tag Variabel</span>
+        </button>
       </div>
 
       {/* Complete Merge Tags Modal */}

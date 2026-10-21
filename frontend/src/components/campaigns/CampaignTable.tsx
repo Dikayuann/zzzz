@@ -26,6 +26,7 @@ interface CampaignTableProps {
   onDuplicate: (item: CampaignItem) => void;
   onRetryFailed: (item: CampaignItem) => void;
   onDelete: (id: string, name: string) => void;
+  onSendNow?: (id: string, name: string) => void;
 }
 
 export const CampaignTable: React.FC<CampaignTableProps> = ({
@@ -34,6 +35,7 @@ export const CampaignTable: React.FC<CampaignTableProps> = ({
   onDuplicate,
   onRetryFailed,
   onDelete,
+  onSendNow,
 }) => {
   return (
     <div className="rounded-2xl border border-slate-200/80 bg-white shadow-2xs overflow-hidden">
@@ -209,6 +211,17 @@ export const CampaignTable: React.FC<CampaignTableProps> = ({
                     {/* 7. Action Buttons */}
                     <td className="py-3.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
+                        {onSendNow && (item.status === "Draft" || item.status === "Scheduled") && (
+                          <button
+                            type="button"
+                            title="Kirim Blast Sekarang"
+                            onClick={() => onSendNow(item.id, item.name)}
+                            className="p-1.5 text-sky-600 hover:text-white hover:bg-sky-600 rounded-lg transition cursor-pointer"
+                          >
+                            <Send className="h-4 w-4" />
+                          </button>
+                        )}
+
                         <button
                           type="button"
                           title="Pratinjau Pesan"
@@ -237,6 +250,15 @@ export const CampaignTable: React.FC<CampaignTableProps> = ({
                             </button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-48 rounded-xl">
+                            {onSendNow && (item.status === "Draft" || item.status === "Scheduled") && (
+                              <DropdownMenuItem
+                                onClick={() => onSendNow(item.id, item.name)}
+                                className="text-xs cursor-pointer font-semibold text-sky-600 focus:text-sky-700 focus:bg-sky-50"
+                              >
+                                <Send className="mr-2 h-4 w-4 text-sky-600" />
+                                <span>Kirim Sekarang</span>
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem
                               onClick={() => onOpenPreview(item)}
                               className="text-xs cursor-pointer font-medium"

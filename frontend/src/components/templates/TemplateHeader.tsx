@@ -104,7 +104,7 @@ export const TemplateHeader: React.FC<TemplateHeaderProps> = ({
                 className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded-full shrink-0 flex items-center gap-1.5 shadow-2xs"
                 title="Ada perubahan yang belum disimpan ke database"
               >
-                
+
                 <span>Belum Disimpan</span>
               </span>
             ) : hasSavedTemplate ? (

@@ -22,6 +22,7 @@ export const CampaignsPage: React.FC = () => {
     errorMessage,
     fetchCampaigns,
     deleteCampaign,
+    sendCampaignNow,
   } = useCampaigns();
    const [selectedTab, setSelectedTab] = useState<string>("All");
   const [selectedChannel, setSelectedChannel] = useState<string>("All");
@@ -209,6 +210,7 @@ export const CampaignsPage: React.FC = () => {
           onDuplicate={handleDuplicate}
           onRetryFailed={handleRetryFailed}
           onDelete={handleDelete}
+          onSendNow={sendCampaignNow}
         />
       )}
 

@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   X,
   Bookmark,
+  FilePlus,
   ArrowRight,
   ArrowLeft,
   RotateCcw,
@@ -17,9 +18,9 @@ import type {
   PresetTemplate,
   AudienceOption,
   DraftPayload,
+  SenderProfile,
 } from "@/types/campaignWizard";
 import {
-  PRESET_TEMPLATES,
   SENDER_PROFILES,
 } from "@/data/mockWizardData";
 import {
@@ -34,6 +35,19 @@ import {
 } from "@/components/campaigns/wizard";
 
 const DRAFT_STORAGE_KEY = "campaign_blast_draft_v1";
+
+const BLANK_TEMPLATE: PresetTemplate = {
+  id: "blank",
+  name: "Tulis Pesan Langsung",
+  badge: "Pesan Kustom",
+  desc: "Tulis pesan broadcast baru tanpa menggunakan template tersimpan.",
+  icon: FilePlus,
+  iconColor: "text-slate-600 bg-slate-100",
+  emailSubject: "",
+  emailContent: "",
+  waContent: "",
+  telegramContent: "",
+};
 
 const getInitialDraft = (): Partial<DraftPayload> | null => {
   try {
@@ -81,10 +95,15 @@ export const NewCampaignPage: React.FC = () => {
   });
 
   // Sender configs
-  const [emailSender, setEmailSender] = useState<string>(() => initialDraft?.emailSender ?? "promo@acmecorp.co");
-  const [replyToEmail, setReplyToEmail] = useState<string>(() => initialDraft?.replyToEmail ?? "support@acmecorp.co");
-  const waSender = "+62 812-8899-7766";
-  const telegramBot = "@AcmeOfficialBlastBot";
+  const [emailSender, setEmailSender] = useState<string>(() => initialDraft?.emailSender && initialDraft.emailSender !== "promo@acmecorp.co" ? initialDraft.emailSender : "");
+  const [replyToEmail, setReplyToEmail] = useState<string>(() => initialDraft?.replyToEmail && initialDraft.replyToEmail !== "support@acmecorp.co" ? initialDraft.replyToEmail : "");
+  
+  const [channelStatus, setChannelStatus] =useState({
+    email: { connected: false, fromEmail: "", fromName: "" },
+    whatsapp: { connected: false, phoneNumber: "", pushName: "" },
+    telegram: { connected: false, botUsername: "" },
+    isLoading: true,
+  }) 
 
   // Audience & Templates dari Database
   const [selectedAudience, setSelectedAudience] = useState<string>(() => {
@@ -102,28 +121,16 @@ export const NewCampaignPage: React.FC = () => {
       badge: "Semua",
     },
   ]);
-  const [availableTemplates, setAvailableTemplates] = useState<PresetTemplate[]>(PRESET_TEMPLATES);
+  const [availableTemplates, setAvailableTemplates] = useState<PresetTemplate[]>([BLANK_TEMPLATE]);
   const [isLoadingAudiences, setIsLoadingAudiences] = useState<boolean>(true);
 
   // Template & Composer State
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(() => initialDraft?.selectedTemplateId ?? "newsletter");
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(() => initialDraft?.selectedTemplateId ?? "blank");
   const [activeTemplateTab, setActiveTemplateTab] = useState<DeliveryChannel>(() => initialDraft?.activeTemplateTab ?? "Email");
-  const [emailSubject, setEmailSubject] = useState<string>(() => {
-    if (initialDraft?.emailSubject !== undefined) return initialDraft.emailSubject;
-    return PRESET_TEMPLATES[1].emailSubject;
-  });
-  const [emailContent, setEmailContent] = useState<string>(() => {
-    if (initialDraft?.emailContent !== undefined) return initialDraft.emailContent;
-    return PRESET_TEMPLATES[1].emailContent;
-  });
-  const [waContent, setWaContent] = useState<string>(() => {
-    if (initialDraft?.waContent !== undefined) return initialDraft.waContent;
-    return PRESET_TEMPLATES[1].waContent;
-  });
-  const [telegramContent, setTelegramContent] = useState<string>(() => {
-    if (initialDraft?.telegramContent !== undefined) return initialDraft.telegramContent;
-    return PRESET_TEMPLATES[1].telegramContent;
-  });
+  const [emailSubject, setEmailSubject] = useState<string>(() => initialDraft?.emailSubject ?? "");
+  const [emailContent, setEmailContent] = useState<string>(() => initialDraft?.emailContent ?? "");
+  const [waContent, setWaContent] = useState<string>(() => initialDraft?.waContent ?? "");
+  const [telegramContent, setTelegramContent] = useState<string>(() => initialDraft?.telegramContent ?? "");
 
   // Schedule & Throttle
   const [scheduleType, setScheduleType] = useState<"instant" | "scheduled">(() => initialDraft?.scheduleType ?? "instant");
@@ -132,11 +139,17 @@ export const NewCampaignPage: React.FC = () => {
   const [throttleRate, setThrottleRate] = useState<string>(() => initialDraft?.throttleRate ?? "safe");
 
   // Email Styling Defaults
-  const emailBrandName = initialDraft?.emailBrandName ?? "ACME CORP";
-  const emailHeaderStyle = initialDraft?.emailHeaderStyle ?? "clean";
+  const emailBrandName =
+    initialDraft?.emailBrandName && initialDraft.emailBrandName !== "ACME CORP"
+      ? initialDraft.emailBrandName
+      : channelStatus.email.fromName || "Brand Resmi";
+  const emailHeaderStyle = initialDraft?.emailHeaderStyle ?? "minimal";
   const emailCtaEnabled = initialDraft?.emailCtaEnabled ?? false;
   const emailCtaText = initialDraft?.emailCtaText ?? "Klaim Penawaran Spesial ➔";
-  const emailCtaUrl = initialDraft?.emailCtaUrl ?? "https://acmecorp.co/promo";
+  const emailCtaUrl =
+    initialDraft?.emailCtaUrl && !initialDraft.emailCtaUrl.includes("acmecorp")
+      ? initialDraft.emailCtaUrl
+      : "#";
   const emailCtaColor = initialDraft?.emailCtaColor ?? "indigo";
   const [emailEditorMode, setEmailEditorMode] = useState<"visual" | "html">(() => initialDraft?.emailEditorMode ?? "visual");
   const emailThemeId = initialDraft?.emailThemeId ?? "plain";
@@ -260,18 +273,68 @@ export const NewCampaignPage: React.FC = () => {
 
     const loadAudienceAndTemplates = async () => {
       try {
-        const [contactsRes, listsRes, tagsRes, templatesRes] = await Promise.allSettled([
+        const [contactsRes, listsRes, tagsRes, templatesRes,smtpRes,waRes,tgRes] = await Promise.allSettled([
           api.get("/contacts?limit=1"),
           api.get("/lists"),
           api.get("/tags"),
           api.get("/templates"),
+          api.get("/settings/smtp"),
+          api.get("/channels/whatsapp/qr/status"),
+          api.get("/channels/telegram")
         ]);
 
         if (!isMounted) return;
+        //  Evaluasi status koneksi masing-masing saluran
+        const smtpData = smtpRes.status === "fulfilled" ? smtpRes.value.data?.data: null;
+        const isEmailConnected = Boolean(smtpData && smtpData.host);
+
+        const waData = waRes.status === "fulfilled" ? waRes.value.data?.data: null;
+        const isWaConnected = waData?.status === "connected"
+
+        const tgPayload = tgRes.status === "fulfilled" ? tgRes.value.data?.data || tgRes.value.data : null;
+        const tgBot = tgPayload?.bot || tgPayload;
+        const isTgConnected = Boolean(tgPayload?.status === "connected" || tgBot?.status === "connected");
+
+        setChannelStatus({
+          email: {
+            connected: isEmailConnected,
+            fromEmail: smtpData?.fromEmail || "",
+            fromName: smtpData?.fromName || "",
+          },
+          whatsapp: {
+            connected: isWaConnected,
+            phoneNumber: waData?.phoneNumber ? `+${waData.phoneNumber}` : "",
+            pushName: waData?.pushName || "",
+          },
+          telegram: {
+            connected: isTgConnected,
+            botUsername: tgBot?.botUsername ? `@${tgBot.botUsername.replace(/^@/, "")}` : "",
+          },
+          isLoading: false,
+        });
+
+        if (smtpData?.fromEmail) {
+          setEmailSender((prev) => (!prev || prev === "promo@acmecorp.co" ? smtpData.fromEmail : prev));
+          setReplyToEmail((prev) => (!prev || prev === "support@acmecorp.co" ? smtpData.fromEmail : prev));
+        }
+
+        const activeList: DeliveryChannel[] = [];
+        if (isEmailConnected) activeList.push("Email");
+        if (isWaConnected) activeList.push("WhatsApp");
+        if (isTgConnected) activeList.push("Telegram");
+
+        if (activeList.length > 0) {
+          setSelectedChannels([activeList[0]]);
+          setActiveTemplateTab(activeList[0]);
+        }
 
         const totalContacts =
           contactsRes.status === "fulfilled"
-            ? (contactsRes.value.data?.data?.meta?.total ?? contactsRes.value.data?.meta?.total ?? 0)
+            ? (contactsRes.value.data?.pagination?.total ??
+               contactsRes.value.data?.data?.pagination?.total ??
+               contactsRes.value.data?.data?.meta?.total ??
+               contactsRes.value.data?.meta?.total ??
+               0)
             : 0;
 
         const dynamicAudiences: AudienceOption[] = [
@@ -326,8 +389,8 @@ export const NewCampaignPage: React.FC = () => {
             return {
               id: String(t.id),
               name: t.name,
-              badge: "Tersimpan",
-              desc: `Template tersimpan (${t.channelMode})`,
+              badge: t.channelMode ? t.channelMode.toUpperCase() : "Pustaka",
+              desc: `Template tersimpan di sistem`,
               icon: Bookmark,
               iconColor: "text-sky-600 bg-sky-50",
               emailSubject: ver.subject || "",
@@ -337,9 +400,8 @@ export const NewCampaignPage: React.FC = () => {
             };
           });
 
-          if (formattedDb.length > 0) {
-            setAvailableTemplates([...PRESET_TEMPLATES, ...formattedDb]);
-          }
+          // Gabungkan opsi Tulis Langsung (Blank) dengan seluruh template database nyata
+          setAvailableTemplates([BLANK_TEMPLATE, ...formattedDb]);
         }
       } catch (err) {
         console.error("Gagal memuat audiens / template:", err);
@@ -355,8 +417,49 @@ export const NewCampaignPage: React.FC = () => {
     };
   }, []);
 
-  const currentSenderProfile =
-    SENDER_PROFILES.find((p) => p.id === emailSender) || SENDER_PROFILES[0];
+  // Filter template hanya yang relevan dengan saluran terpilih (WhatsApp / Email / Telegram)
+  const filteredTemplates = useMemo(() => {
+    const activeChannel = selectedChannels[0] || "Email";
+    return availableTemplates.filter((tmpl) => {
+      if (tmpl.id === "blank") return true;
+      const mode = (tmpl.badge || "").toLowerCase();
+      if (mode === "multiple") return true;
+
+      if (activeChannel === "WhatsApp") {
+        return mode === "whatsapp" || Boolean(tmpl.waContent?.trim());
+      }
+      if (activeChannel === "Email") {
+        return mode === "email" || Boolean(tmpl.emailContent?.trim());
+      }
+      if (activeChannel === "Telegram") {
+        return mode === "telegram" || Boolean(tmpl.telegramContent?.trim());
+      }
+      return false;
+    });
+  }, [availableTemplates, selectedChannels]);
+
+  // Pastikan template terpilih selalu ada di dalam filteredTemplates saluran aktif
+  useEffect(() => {
+    if (!filteredTemplates.some((t) => t.id === selectedTemplateId)) {
+      const fallback = filteredTemplates.find((t) => t.id !== "blank") || filteredTemplates[0] || BLANK_TEMPLATE;
+      setSelectedTemplateId(fallback.id);
+      setEmailSubject(fallback.emailSubject || "");
+      setEmailContent(fallback.emailContent || "");
+      setWaContent(fallback.waContent || "");
+      setTelegramContent(fallback.telegramContent || "");
+    }
+  }, [filteredTemplates, selectedTemplateId]);
+
+  const currentSenderProfile: SenderProfile = useMemo(() => {
+    const base = SENDER_PROFILES.find((p) => p.id === emailSender) || SENDER_PROFILES[0];
+    return {
+      id: emailSender || base?.id || "smtp",
+      name: channelStatus.email.fromName || base?.name || "Pengirim Resmi",
+      email: channelStatus.email.fromEmail || emailSender || base?.email || "pengirim@domain.com",
+      quota: base?.quota || "Unlimited",
+      badge: channelStatus.email.connected ? "Terhubung" : base?.badge || "Standar",
+    };
+  }, [channelStatus.email, emailSender]);
   const currentAudienceObj =
     audienceOptions.find((a) => a.id === selectedAudience) || audienceOptions[0] || {
       id: "all",
@@ -414,8 +517,8 @@ export const NewCampaignPage: React.FC = () => {
     } catch (e) {}
     setCampaignName("");
     setSelectedChannels(["Email"]);
-    setEmailSender("promo@acmecorp.co");
-    setReplyToEmail("support@acmecorp.co");
+    setEmailSender(channelStatus.email.fromEmail || "");
+    setReplyToEmail(channelStatus.email.fromEmail || "");
     setSelectedAudience("all-subscribers");
     setSelectedTemplateId("blank");
     setEmailSubject("");
@@ -445,20 +548,8 @@ export const NewCampaignPage: React.FC = () => {
   };
 
   const handleToggleChannel = (target: DeliveryChannel) => {
-    if (selectedChannels.includes(target)) {
-      if (selectedChannels.length === 1) {
-        toast.error("Minimal harus memilih 1 saluran pengiriman!");
-        return;
-      }
-      const updated = selectedChannels.filter((c) => c !== target);
-      setSelectedChannels(updated);
-      if (activeTemplateTab === target) {
-        setActiveTemplateTab(updated[0]);
-      }
-    } else {
-      const updated = [...selectedChannels, target];
-      setSelectedChannels(updated);
-    }
+    setSelectedChannels([target]); // hanya 1 saluran aktif
+    setActiveTemplateTab(target); // template otomatis menyesuaikan channel
   };
 
   const handleInsertTag = (tag: string) => {
@@ -555,9 +646,10 @@ export const NewCampaignPage: React.FC = () => {
       const res = await api.post("/campaigns", payload);
       const createdCampaign = res.data?.data;
 
-      // 7. Jika tipe 'instant', langsung antrikan penerima untuk blast
+      // 7. Jika tipe 'instant', langsung antrikan penerima untuk blast dan picu worker
       if (scheduleType === "instant" && createdCampaign?.id) {
         await api.post(`/campaigns/${createdCampaign.id}/schedule`);
+        await api.post(`/campaigns/${createdCampaign.id}/send-now`);
       }
 
 
@@ -688,9 +780,10 @@ export const NewCampaignPage: React.FC = () => {
             onEmailSenderChange={setEmailSender}
             replyToEmail={replyToEmail}
             onReplyToEmailChange={setReplyToEmail}
-            waSender={waSender}
-            telegramBot={telegramBot}
+            waSender={channelStatus.whatsapp.phoneNumber || "Belum ada nomor terhubung"}
+            telegramBot={channelStatus.telegram.botUsername || "Belum ada bot terhubung"}
             senderProfiles={SENDER_PROFILES}
+            channelStatus={channelStatus}
           />
         )}
 
@@ -719,7 +812,7 @@ export const NewCampaignPage: React.FC = () => {
             onActiveTemplateTabChange={setActiveTemplateTab}
             selectedTemplateId={selectedTemplateId}
             onSelectTemplate={handleSelectTemplate}
-            presetTemplates={availableTemplates}
+            presetTemplates={filteredTemplates}
             emailSubject={emailSubject}
             onEmailSubjectChange={setEmailSubject}
             emailContent={emailContent}
@@ -739,6 +832,10 @@ export const NewCampaignPage: React.FC = () => {
             emailThemeId={emailThemeId}
             onOpenMergeModal={() => setShowMergeModal(true)}
             onSaveTemplate={handleManualSave}
+            waSenderName={channelStatus.whatsapp.pushName || "WhatsApp Official"}
+            telegramBotName={channelStatus.telegram.botUsername || "Official Telegram Bot"}
+            emailSenderName={channelStatus.email.fromName || "Pengirim Resmi"}
+            emailSenderAddress={channelStatus.email.fromEmail || emailSender || "pengirim@domain.com"}
           />
         )}
 
