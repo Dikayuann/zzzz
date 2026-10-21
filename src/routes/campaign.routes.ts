@@ -9,6 +9,7 @@ import {
     deleteCampaignController,
     getCampaignRecipientsController,
     previewAudienceController,
+    sendCampaignNowController,
 } from "../controllers/campaign.controller";
 import { authenticateJWT } from "../middlewares/auth.middleware";
 import { requirePermission } from "../middlewares/rbac.middleware";
@@ -270,10 +271,35 @@ router.post(
  *       200:
  *         description: Campaign berhasil dihapus
  */
+
 router.delete(
     "/:id",
     requirePermission("campaigns", "delete"),
     asyncHandler(deleteCampaignController)
 );
+
+/**
+ * @openapi
+ * /campaigns/{id}/send-now:
+ *   post:
+ *     summary: Eksekusi blast campaign sekarang secara instan
+ *     tags: [Campaigns]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Pengiriman campaign berhasil dimulai
+ */
+router.post(
+    "/:id/send-now",
+    requirePermission("campaigns", "edit"),
+    asyncHandler(sendCampaignNowController)
+);
+
 
 export default router;

@@ -10,6 +10,7 @@ import {
     getCampaignRecipients,
     expandAudience,
 } from "../services/campaign.service";
+import { executeCampaignBlast } from "../services/campaign-worker.service";
 
 export const getCampaignsController = async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId;
@@ -142,4 +143,13 @@ export const previewAudienceController = async (req: Request, res: Response) => 
             })),
         },
     });
+};
+export const sendCampaignNowController = async (req: Request, res: Response) => {
+    const tenantId = req.user!.tenantId;
+    const campaignId = Number(req.params.id);
+    if (isNaN(campaignId)) {
+        return res.status(400).json({ message: "ID campaign tidak valid" });
+    }
+    const result = await executeCampaignBlast(tenantId, campaignId);
+    return res.status(200).json(result);
 };
