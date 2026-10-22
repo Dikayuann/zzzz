@@ -8,6 +8,8 @@ import {
   Palette,
   Code2,
   Eye,
+  RefreshCw,
+  ExternalLink,
 } from "lucide-react";
 import type { DeliveryChannel, PresetTemplate } from "@/types/campaignWizard";
 import { RichCampaignEditor } from "@/components/campaigns/RichCampaignEditor";
@@ -44,6 +46,8 @@ interface StepTemplateProps {
   emailSenderAddress?: string;
   waSenderName?: string;
   telegramBotName?: string;
+  onRefreshTemplates?: () => void;
+  onOpenTemplatesPage?: (editId?: string) => void;
 }
 
 export const StepTemplate: React.FC<StepTemplateProps> = ({
@@ -77,6 +81,8 @@ export const StepTemplate: React.FC<StepTemplateProps> = ({
   emailSenderAddress,
   waSenderName,
   telegramBotName,
+  onRefreshTemplates,
+  onOpenTemplatesPage,
 }) => {
   const currentContent =
     activeTemplateTab === "Email"
@@ -84,6 +90,8 @@ export const StepTemplate: React.FC<StepTemplateProps> = ({
       : activeTemplateTab === "WhatsApp"
       ? waContent
       : telegramContent;
+
+  const isEmail = activeTemplateTab === "Email";
 
   return (
     <div className="space-y-6 animate-in fade-in-50 duration-200">
@@ -132,23 +140,53 @@ export const StepTemplate: React.FC<StepTemplateProps> = ({
           <button
             type="button"
             onClick={onOpenMergeModal}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50/70 hover:bg-indigo-100 text-xs font-semibold text-indigo-700 shadow-2xs transition cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 shadow-2xs transition cursor-pointer"
           >
-            <Tag className="h-3.5 w-3.5" />
-            <span>&lt;&gt; Pustaka Tag (28+)</span>
+            <Tag className="h-3.5 w-3.5 text-slate-500" />
+            <span>Tag Personalisasi</span>
           </button>
         </div>
       </div>
 
       {/* B. Template Preset Picker Cards */}
       <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
-            Pustaka Template Tersimpan
-          </span>
-          <span className="text-[11px] text-slate-400">
-            Pilih template dari database Anda atau gunakan Tulis Pesan Langsung
-          </span>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <span className="text-xs font-semibold text-slate-800 block">
+              Pilihan Template
+            </span>
+            <span className="text-[11px] text-slate-400">
+              Pilih template tersimpan atau mulai dari template kosong
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {onRefreshTemplates && (
+              <button
+                type="button"
+                onClick={onRefreshTemplates}
+                title="Segarkan daftar template dari database"
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-[11px] font-medium text-slate-600 transition shadow-2xs cursor-pointer active:scale-95"
+              >
+                <RefreshCw className="h-3 w-3 text-slate-500" />
+                <span>Segarkan</span>
+              </button>
+            )}
+
+            {onOpenTemplatesPage && (
+              <button
+                type="button"
+                onClick={() => onOpenTemplatesPage(selectedTemplateId !== "blank" ? selectedTemplateId : undefined)}
+                title="Buka halaman manajemen template untuk mengedit template di sistem"
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-[11px] font-medium text-slate-600 transition shadow-2xs cursor-pointer active:scale-95"
+              >
+                <ExternalLink className="h-3 w-3 text-slate-500" />
+                <span>
+                  {selectedTemplateId !== "blank" ? "Edit di Pustaka ↗" : "Kelola Template ↗"}
+                </span>
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
@@ -189,8 +227,23 @@ export const StepTemplate: React.FC<StepTemplateProps> = ({
                 </div>
 
                 {isSelected && (
-                  <div className="mt-2 pt-1 border-t border-sky-100 flex items-center justify-end">
-                    <span className="text-[9px] font-bold text-sky-600 flex items-center gap-0.5">
+                  <div className="mt-2 pt-1 border-t border-sky-100 flex items-center justify-between text-[9px]">
+                    {tmpl.id !== "blank" && onOpenTemplatesPage ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenTemplatesPage(tmpl.id);
+                        }}
+                        className="font-bold text-sky-600 hover:text-sky-800 underline flex items-center gap-0.5 cursor-pointer"
+                        title="Buka dan edit template ini di halaman Templates"
+                      >
+                        <ExternalLink className="h-2.5 w-2.5" /> Edit
+                      </button>
+                    ) : (
+                      <span />
+                    )}
+                    <span className="font-bold text-sky-600 flex items-center gap-0.5">
                       <Check className="h-3 w-3" /> Dipakai
                     </span>
                   </div>
@@ -216,10 +269,10 @@ export const StepTemplate: React.FC<StepTemplateProps> = ({
             </div>
 
             {/* Subject Line (Email only) */}
-            {activeTemplateTab === "Email" && (
+            {isEmail && (
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-slate-700">
-                  Subject line
+                  Subject Line
                 </label>
                 <div className="relative">
                   <input
@@ -227,18 +280,19 @@ export const StepTemplate: React.FC<StepTemplateProps> = ({
                     value={emailSubject}
                     onChange={(e) => onEmailSubjectChange(e.target.value)}
                     placeholder="Tulis subjek email..."
-                    className="w-full h-10 rounded-xl border border-slate-200 bg-white px-3.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 shadow-2xs"
+                    className="w-full h-10 rounded-xl border border-slate-200 bg-white px-3.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 shadow-2xs transition-all"
                   />
                 </div>
               </div>
             )}
 
-            {/* Mode Editor Switcher (Email only) */}
-            {activeTemplateTab === "Email" && (
-              <div className="flex items-center justify-between pt-1">
-                <label className="text-xs font-semibold text-slate-700">
-                  Isi Pesan Email
-                </label>
+            {/* Mode Editor Switcher & Header */}
+            <div className="flex items-center justify-between pt-1">
+              <label className="text-xs font-semibold text-slate-700">
+                Isi Pesan {activeTemplateTab}
+              </label>
+
+              {isEmail && (
                 <div className="flex items-center p-0.5 rounded-xl bg-slate-100 border border-slate-200 text-[11px] font-semibold">
                   <button
                     type="button"
@@ -265,11 +319,11 @@ export const StepTemplate: React.FC<StepTemplateProps> = ({
                     <span>&lt;&gt; Custom HTML</span>
                   </button>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
             {/* Editor View */}
-            {activeTemplateTab === "Email" && emailEditorMode === "html" ? (
+            {isEmail && emailEditorMode === "html" ? (
               <div className="space-y-1.5">
                 <textarea
                   rows={12}

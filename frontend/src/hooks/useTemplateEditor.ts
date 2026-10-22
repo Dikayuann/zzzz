@@ -119,11 +119,11 @@ export function useTemplateEditor() {
   const [brandColor, setBrandColor] = useState("#4F46E5");
   const [enableCta, setEnableCta] = useState(false);
   const [ctaText, setCtaText] = useState("Klaim Voucher Sekarang");
-  const [ctaUrl, setCtaUrl] = useState("https://tokoonline.com/promo");
+  const [ctaUrl, setCtaUrl] = useState("https://domainanda.com/promo");
   const [ctaColor, setCtaColor] = useState("#4F46E5");
   const [enableSocial, setEnableSocial] = useState(false);
-  const [websiteUrl, setWebsiteUrl] = useState("https://acmecorp.co");
-  const [instagramUrl, setInstagramUrl] = useState("https://instagram.com/acmecorp");
+  const [websiteUrl, setWebsiteUrl] = useState("https://domainanda.com");
+  const [instagramUrl, setInstagramUrl] = useState("https://instagram.com/brandanda");
   const [whatsappUrl, setWhatsappUrl] = useState("https://wa.me/6281234567890");
   const [footerAddress, setFooterAddress] = useState("");
 
@@ -381,11 +381,11 @@ export function useTemplateEditor() {
           logoAlign: json.logoAlign || "center",
           enableCta: Boolean(json.enableCta),
           ctaText: (json.ctaText || "Klaim Voucher Sekarang").trim(),
-          ctaUrl: (json.ctaUrl || "https://tokoonline.com/promo").trim(),
+          ctaUrl: (json.ctaUrl || "https://domainanda.com/promo").trim(),
           ctaColor: json.ctaColor || "#4F46E5",
           enableSocial: Boolean(json.enableSocial),
-          websiteUrl: (json.websiteUrl || "https://acmecorp.co").trim(),
-          instagramUrl: (json.instagramUrl || "https://instagram.com/acmecorp").trim(),
+          websiteUrl: (json.websiteUrl || "https://domainanda.com").trim(),
+          instagramUrl: (json.instagramUrl || "https://instagram.com/brandanda").trim(),
           whatsappUrl: (json.whatsappUrl || "https://wa.me/6281234567890").trim(),
           footerAddress: (json.footerAddress || "").trim(),
           whatsappMediaUrl: (json.whatsappMediaUrl || (targetChannel === "whatsapp" ? json.mediaUrl : "") || "").trim(),
@@ -519,11 +519,11 @@ export function useTemplateEditor() {
         setLogoAlign(json.logoAlign || "center");
         setEnableCta(Boolean(json.enableCta));
         setCtaText(json.ctaText || "Klaim Voucher Sekarang");
-        setCtaUrl(json.ctaUrl || "https://tokoonline.com/promo");
+        setCtaUrl(json.ctaUrl || "https://domainanda.com/promo");
         setCtaColor(json.ctaColor || "#4F46E5");
         setEnableSocial(Boolean(json.enableSocial));
-        setWebsiteUrl(json.websiteUrl || "https://acmecorp.co");
-        setInstagramUrl(json.instagramUrl || "https://instagram.com/acmecorp");
+        setWebsiteUrl(json.websiteUrl || "https://domainanda.com");
+        setInstagramUrl(json.instagramUrl || "https://instagram.com/brandanda");
         setWhatsappUrl(json.whatsappUrl || "https://wa.me/6281234567890");
         setFooterAddress(json.footerAddress || "");
         setWhatsappMediaUrl(json.whatsappMediaUrl || (targetChannel === "whatsapp" ? json.mediaUrl : "") || "");
@@ -554,11 +554,11 @@ export function useTemplateEditor() {
       logoAlign: json.logoAlign || "center",
       enableCta: Boolean(json.enableCta),
       ctaText: (json.ctaText || "Klaim Voucher Sekarang").trim(),
-      ctaUrl: (json.ctaUrl || "https://tokoonline.com/promo").trim(),
+      ctaUrl: (json.ctaUrl || "https://domainanda.com/promo").trim(),
       ctaColor: json.ctaColor || "#4F46E5",
       enableSocial: Boolean(json.enableSocial),
-      websiteUrl: (json.websiteUrl || "https://acmecorp.co").trim(),
-      instagramUrl: (json.instagramUrl || "https://instagram.com/acmecorp").trim(),
+      websiteUrl: (json.websiteUrl || "https://domainanda.com").trim(),
+      instagramUrl: (json.instagramUrl || "https://instagram.com/brandanda").trim(),
       whatsappUrl: (json.whatsappUrl || "https://wa.me/6281234567890").trim(),
       footerAddress: (json.footerAddress || "").trim(),
       whatsappMediaUrl: (json.whatsappMediaUrl || (targetChannel === "whatsapp" ? json.mediaUrl : "") || "").trim(),

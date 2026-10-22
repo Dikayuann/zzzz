@@ -58,4 +58,9 @@ export interface DraftPayload {
   emailCtaColor?: string;
   emailEditorMode?: "visual" | "html";
   emailThemeId?: string;
+  sendStartTime?: string;
+  sendEndTime?: string;
+  enableSendingWindow?: boolean;
+  enableEndDate?: boolean;
+  endDate?: string;
 }

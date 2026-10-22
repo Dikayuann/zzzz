@@ -6,6 +6,7 @@ import {
   AlignCenter,
   AlignRight,
 } from "lucide-react";
+import { toast } from "sonner";
 
 export interface LogoBlockEditorProps {
   enableLogo?: boolean;
@@ -35,7 +36,7 @@ export const LogoBlockEditor: React.FC<LogoBlockEditorProps> = ({
     if (!file) return;
 
     if (!file.type.startsWith("image/")) {
-      alert("Harap pilih file gambar (PNG, JPG, SVG)");
+      toast.error("Harap pilih file gambar (PNG, JPG, SVG)");
       return;
     }
 
@@ -91,7 +92,7 @@ export const LogoBlockEditor: React.FC<LogoBlockEditorProps> = ({
                   type="text"
                   value={logoUrl}
                   onChange={(e) => onLogoUrlChange?.(e.target.value)}
-                  placeholder="https://acmecorp.co/logo.png"
+                  placeholder="https://domainanda.com/logo.png"
                   className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-slate-800"
                 />
 

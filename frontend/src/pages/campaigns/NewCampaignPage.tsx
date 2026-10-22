@@ -1,10 +1,8 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  CheckCircle2,
   X,
   Bookmark,
-  FilePlus,
   ArrowRight,
   ArrowLeft,
   RotateCcw,
@@ -21,6 +19,7 @@ import type {
   SenderProfile,
 } from "@/types/campaignWizard";
 import {
+  PRESET_TEMPLATES,
   SENDER_PROFILES,
 } from "@/data/mockWizardData";
 import {
@@ -35,19 +34,6 @@ import {
 } from "@/components/campaigns/wizard";
 
 const DRAFT_STORAGE_KEY = "campaign_blast_draft_v1";
-
-const BLANK_TEMPLATE: PresetTemplate = {
-  id: "blank",
-  name: "Tulis Pesan Langsung",
-  badge: "Pesan Kustom",
-  desc: "Tulis pesan broadcast baru tanpa menggunakan template tersimpan.",
-  icon: FilePlus,
-  iconColor: "text-slate-600 bg-slate-100",
-  emailSubject: "",
-  emailContent: "",
-  waContent: "",
-  telegramContent: "",
-};
 
 const getInitialDraft = (): Partial<DraftPayload> | null => {
   try {
@@ -121,7 +107,7 @@ export const NewCampaignPage: React.FC = () => {
       badge: "Semua",
     },
   ]);
-  const [availableTemplates, setAvailableTemplates] = useState<PresetTemplate[]>([BLANK_TEMPLATE]);
+  const [availableTemplates, setAvailableTemplates] = useState<PresetTemplate[]>(PRESET_TEMPLATES);
   const [isLoadingAudiences, setIsLoadingAudiences] = useState<boolean>(true);
 
   // Template & Composer State
@@ -132,17 +118,44 @@ export const NewCampaignPage: React.FC = () => {
   const [waContent, setWaContent] = useState<string>(() => initialDraft?.waContent ?? "");
   const [telegramContent, setTelegramContent] = useState<string>(() => initialDraft?.telegramContent ?? "");
 
+  const getTodayDateString = () => {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    const dd = String(now.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const todayDateStr = getTodayDateString();
+
   // Schedule & Throttle
-  const [scheduleType, setScheduleType] = useState<"instant" | "scheduled">(() => initialDraft?.scheduleType ?? "instant");
-  const [scheduledDate, setScheduledDate] = useState<string>(() => initialDraft?.scheduledDate ?? "2026-09-23");
-  const [scheduledTime, setScheduledTime] = useState<string>(() => initialDraft?.scheduledTime ?? "10:00");
+  const [scheduleType, setScheduleType] = useState<"instant" | "scheduled">(() => {
+    if (initialDraft?.selectedChannels?.includes("WhatsApp")) return "scheduled";
+    return initialDraft?.scheduleType ?? "instant";
+  });
+  const [scheduledDate, setScheduledDate] = useState<string>(() => {
+    if (initialDraft?.scheduledDate && initialDraft.scheduledDate >= todayDateStr) {
+      return initialDraft.scheduledDate;
+    }
+    return todayDateStr;
+  });
+  const [scheduledTime, setScheduledTime] = useState<string>(() => initialDraft?.scheduledTime ?? "09:00");
+  const [sendStartTime, setSendStartTime] = useState<string>(() => initialDraft?.sendStartTime ?? "09:00");
+  const [sendEndTime, setSendEndTime] = useState<string>(() => initialDraft?.sendEndTime ?? "17:00");
+  const [enableSendingWindow, setEnableSendingWindow] = useState<boolean>(() => initialDraft?.enableSendingWindow ?? false);
+  const [enableEndDate, setEnableEndDate] = useState<boolean>(() => initialDraft?.enableEndDate ?? false);
+  const [endDate, setEndDate] = useState<string>(() => {
+    if (initialDraft?.endDate && initialDraft.endDate >= todayDateStr) {
+      return initialDraft.endDate;
+    }
+    return "";
+  });
   const [throttleRate, setThrottleRate] = useState<string>(() => initialDraft?.throttleRate ?? "safe");
 
-  // Email Styling Defaults
   const emailBrandName =
-    initialDraft?.emailBrandName && initialDraft.emailBrandName !== "ACME CORP"
+    initialDraft?.emailBrandName && initialDraft.emailBrandName !== "ACME CORP" && initialDraft.emailBrandName !== "Brand Resmi"
       ? initialDraft.emailBrandName
-      : channelStatus.email.fromName || "Brand Resmi";
+      : channelStatus.email.fromName || "Campaign Blast";
   const emailHeaderStyle = initialDraft?.emailHeaderStyle ?? "minimal";
   const emailCtaEnabled = initialDraft?.emailCtaEnabled ?? false;
   const emailCtaText = initialDraft?.emailCtaText ?? "Klaim Penawaran Spesial ➔";
@@ -160,15 +173,6 @@ export const NewCampaignPage: React.FC = () => {
   const [showResetModal, setShowResetModal] = useState(false);
   const [showMergeModal, setShowMergeModal] = useState(false);
 
-  const [hasRestoredDraft, setHasRestoredDraft] = useState<boolean>(() => {
-    return Boolean(
-      initialDraft &&
-        (initialDraft.campaignName ||
-          initialDraft.emailSubject ||
-          initialDraft.emailContent ||
-          (initialDraft.currentStep && initialDraft.currentStep > 1))
-    );
-  });
 
   const [lastSavedTime, setLastSavedTime] = useState<string>(() => {
     if (initialDraft?.updatedAt) {
@@ -216,6 +220,11 @@ export const NewCampaignPage: React.FC = () => {
       emailCtaColor,
       emailEditorMode,
       emailThemeId,
+      sendStartTime,
+      sendEndTime,
+      enableSendingWindow,
+      enableEndDate,
+      endDate,
       ...overrides,
     };
 
@@ -253,6 +262,9 @@ export const NewCampaignPage: React.FC = () => {
     currentStep,
     maxStepReached,
     emailEditorMode,
+    enableSendingWindow,
+    enableEndDate,
+    endDate,
   ]);
 
   useEffect(() => {
@@ -400,8 +412,8 @@ export const NewCampaignPage: React.FC = () => {
             };
           });
 
-          // Gabungkan opsi Tulis Langsung (Blank) dengan seluruh template database nyata
-          setAvailableTemplates([BLANK_TEMPLATE, ...formattedDb]);
+          // Gabungkan template bawaan dengan seluruh template database nyata
+          setAvailableTemplates([...PRESET_TEMPLATES, ...formattedDb]);
         }
       } catch (err) {
         console.error("Gagal memuat audiens / template:", err);
@@ -438,17 +450,12 @@ export const NewCampaignPage: React.FC = () => {
     });
   }, [availableTemplates, selectedChannels]);
 
-  // Pastikan template terpilih selalu ada di dalam filteredTemplates saluran aktif
+  // Jika template terpilih tidak ada di filteredTemplates, hanya ubah selectedTemplateId tanpa menghapus isi pesan yang sudah ada
   useEffect(() => {
-    if (!filteredTemplates.some((t) => t.id === selectedTemplateId)) {
-      const fallback = filteredTemplates.find((t) => t.id !== "blank") || filteredTemplates[0] || BLANK_TEMPLATE;
-      setSelectedTemplateId(fallback.id);
-      setEmailSubject(fallback.emailSubject || "");
-      setEmailContent(fallback.emailContent || "");
-      setWaContent(fallback.waContent || "");
-      setTelegramContent(fallback.telegramContent || "");
+    if (availableTemplates.length > 0 && !filteredTemplates.some((t) => t.id === selectedTemplateId)) {
+      setSelectedTemplateId("blank");
     }
-  }, [filteredTemplates, selectedTemplateId]);
+  }, [filteredTemplates, selectedTemplateId, availableTemplates.length]);
 
   const currentSenderProfile: SenderProfile = useMemo(() => {
     const base = SENDER_PROFILES.find((p) => p.id === emailSender) || SENDER_PROFILES[0];
@@ -527,7 +534,6 @@ export const NewCampaignPage: React.FC = () => {
     setTelegramContent("");
     setCurrentStep(1);
     setMaxStepReached(1);
-    setHasRestoredDraft(false);
     setShowResetModal(false);
     setShowCancelModal(false);
     toast.info("Draf telah di-reset ke pengaturan awal.");
@@ -547,6 +553,56 @@ export const NewCampaignPage: React.FC = () => {
     }
   };
 
+  const fetchTemplatesList = async () => {
+    try {
+      const res = await api.get("/templates");
+      if (Array.isArray(res.data?.data)) {
+        const dbTemplates = res.data.data;
+        const formattedDb: PresetTemplate[] = dbTemplates.map((t: any) => {
+          const ver = t.versions?.[0] || {};
+          return {
+            id: String(t.id),
+            name: t.name,
+            badge: t.channelMode ? t.channelMode.toUpperCase() : "Pustaka",
+            desc: `Template tersimpan di sistem`,
+            icon: Bookmark,
+            iconColor: "text-sky-600 bg-sky-50",
+            emailSubject: ver.subject || "",
+            emailContent: ver.contentHtml || "",
+            waContent: ver.contentWhatsapp || "",
+            telegramContent: ver.contentTelegram || "",
+          };
+        });
+        setAvailableTemplates([...PRESET_TEMPLATES, ...formattedDb]);
+        return formattedDb;
+      }
+    } catch (e) {
+      console.error("Gagal memperbarui daftar template:", e);
+    }
+    return [];
+  };
+
+  const handleRefreshTemplates = async () => {
+    const list = await fetchTemplatesList();
+    toast.success(`Daftar template berhasil diperbarui (${list.length} template tersedia).`);
+  };
+
+  const handleOpenTemplatesPage = (editId?: string) => {
+    saveDraftToStorage();
+    const url = editId
+      ? `/templates?id=${editId}&from=campaign&returnTo=/campaigns/new`
+      : `/templates?from=campaign&returnTo=/campaigns/new`;
+    navigate(url);
+  };
+
+  useEffect(() => {
+    const handleFocus = () => {
+      fetchTemplatesList();
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, []);
+
   const handleToggleChannel = (target: DeliveryChannel) => {
     setSelectedChannels([target]); // hanya 1 saluran aktif
     setActiveTemplateTab(target); // template otomatis menyesuaikan channel
@@ -564,25 +620,118 @@ export const NewCampaignPage: React.FC = () => {
     toast.success(`Variabel ${placeholder} disisipkan!`);
   };
 
-  const canContinue = () => {
-    if (currentStep === 1) {
-      return campaignName.trim().length > 0 && selectedChannels.length > 0;
-    }
-    if (currentStep === 3) {
-      if (selectedChannels.includes("Email") && !emailContent.trim()) return false;
-      if (selectedChannels.includes("WhatsApp") && !waContent.trim()) return false;
-      if (selectedChannels.includes("Telegram") && !telegramContent.trim()) return false;
-      return true;
-    }
-    return true;
+  const isContentEmpty = (content: string | undefined | null): boolean => {
+    if (!content) return true;
+    if (content.includes("<img")) return false;
+    const stripped = content
+      .replace(/<[^>]*>/g, "")
+      .replace(/&nbsp;/gi, " ")
+      .trim();
+    return stripped.length === 0;
   };
 
-    const handleNext = async () => {
+  const getStepValidationError = (step: number): string | null => {
+    if (step === 1) {
+      if (!campaignName.trim()) return "Nama kampanye wajib diisi!";
+      if (selectedChannels.length === 0) return "Pilih setidaknya satu saluran pengiriman!";
+      return null;
+    }
+    if (step === 2) {
+      if (!selectedAudience) return "Pilih target audiens terlebih dahulu!";
+      return null;
+    }
+    if (step === 3) {
+      if (selectedChannels.includes("Email")) {
+        if (!emailSubject.trim()) return "Subjek email wajib diisi sebelum lanjut!";
+        if (isContentEmpty(emailContent)) return "Isi pesan email masih kosong. Silakan tulis pesan atau pilih template!";
+      }
+      if (selectedChannels.includes("WhatsApp")) {
+        if (isContentEmpty(waContent)) return "Isi pesan WhatsApp masih kosong. Silakan tulis pesan atau pilih template!";
+      }
+      if (selectedChannels.includes("Telegram")) {
+        if (isContentEmpty(telegramContent)) return "Isi pesan Telegram masih kosong. Silakan tulis pesan atau pilih template!";
+      }
+      return null;
+    }
+    if (step === 4) {
+      if (selectedChannels.includes("WhatsApp")) {
+        if (!scheduledDate) return "Pilih tanggal mulai pengiriman WhatsApp!";
+        if (!sendStartTime || !sendEndTime) return "Tentukan jam mulai dan jam selesai kerja WhatsApp!";
+        if (sendStartTime >= sendEndTime) {
+          return "Jam mulai kerja harus lebih awal dari jam selesai kerja (contoh: 09:00 – 17:00 WIB)!";
+        }
+      }
+
+      if (scheduleType === "scheduled") {
+        if (!scheduledDate || !scheduledTime) {
+          return "Pilih tanggal dan jam pengiriman!";
+        }
+        const scheduleDateTime = new Date(`${scheduledDate}T${scheduledTime}:00`);
+        if (scheduleDateTime.getTime() < Date.now() - 2 * 60 * 1000) {
+          return "Waktu peluncuran terjadwal tidak boleh berada di masa lampau!";
+        }
+      }
+
+      if (enableSendingWindow) {
+        if (!sendStartTime || !sendEndTime) {
+          return "Tentukan jam mulai dan jam selesai kerja pengiriman!";
+        }
+        if (sendStartTime >= sendEndTime) {
+          return "Jam mulai kerja harus lebih awal dari jam selesai kerja (contoh: 09:00 – 17:00 WIB)!";
+        }
+      }
+
+      // Validasi Batas Tanggal Berakhir
+      if (enableEndDate) {
+        if (!endDate) {
+          return "Tentukan tanggal batas akhir pengiriman atau nonaktifkan opsi batas waktu!";
+        }
+        const startDateStr = (selectedChannels.includes("WhatsApp") || scheduleType === "scheduled") && scheduledDate
+          ? scheduledDate
+          : todayDateStr;
+        if (endDate < startDateStr) {
+          return `Tanggal batas akhir (${endDate}) tidak boleh lebih awal dari tanggal pengiriman (${startDateStr})!`;
+        }
+      }
+
+      return null;
+    }
+    return null;
+  };
+
+  const handleStepClick = (targetStep: number) => {
+    if (targetStep === currentStep) return;
+    if (targetStep < currentStep) {
+      setCurrentStep(targetStep);
+      saveDraftToStorage({ currentStep: targetStep });
+      return;
+    }
+    // Validasi setiap step antara currentStep sampai targetStep
+    for (let s = currentStep; s < targetStep; s++) {
+      const err = getStepValidationError(s);
+      if (err) {
+        toast.error(err);
+        return;
+      }
+    }
+    setCurrentStep(targetStep);
+    saveDraftToStorage({ currentStep: targetStep });
+  };
+
+  const handleNext = async () => {
+    const err = getStepValidationError(currentStep);
+    if (err) {
+      toast.error(err);
+      return;
+    }
+
     // Jika masih di Step 1 sampai 4, lanjut ke step berikutnya seperti biasa
     if (currentStep < 5) {
       const nextStep = currentStep + 1;
+      const nextMax = Math.max(maxStepReached, nextStep);
       setCurrentStep(nextStep);
-      setMaxStepReached((prev) => Math.max(prev, nextStep));
+      setMaxStepReached(nextMax);
+      saveDraftToStorage({ currentStep: nextStep, maxStepReached: nextMax });
       return;
     }
 
@@ -608,10 +757,25 @@ export const NewCampaignPage: React.FC = () => {
         audienceRef = selectedAudience;
       }
 
-           // 3. Format waktu jadwal (jika user memilih jadwal di masa depan)
+      // 3. Format waktu jadwal (jika user memilih jadwal di masa depan atau WhatsApp)
       let scheduledAt: string | null = null;
-      if (scheduleType === "scheduled" && scheduledDate && scheduledTime) {
+      let recurrenceRule: string | null = null;
+
+      const windowRule =
+        selectedChannels.includes("WhatsApp") || enableSendingWindow
+          ? `window:${sendStartTime}-${sendEndTime}`
+          : null;
+      const untilRule = enableEndDate && endDate ? `until:${endDate}` : null;
+
+      const ruleParts = [windowRule, untilRule].filter(Boolean);
+      recurrenceRule = ruleParts.length > 0 ? ruleParts.join(";") : null;
+
+      if (selectedChannels.includes("WhatsApp")) {
+        scheduledAt = new Date(`${scheduledDate}T${sendStartTime}:00`).toISOString();
+      } else if (scheduleType === "scheduled" && scheduledDate && scheduledTime) {
         scheduledAt = new Date(`${scheduledDate}T${scheduledTime}:00`).toISOString();
+      } else {
+        scheduledAt = new Date().toISOString();
       }
 
       // 4. Hubungkan / Auto-create template ke database MariaDB
@@ -640,14 +804,15 @@ export const NewCampaignPage: React.FC = () => {
         audienceType,
         audienceRef,
         scheduledAt,
+        recurrenceRule,
       };
 
       // 6. Panggil API backend POST /api/v1/campaigns
       const res = await api.post("/campaigns", payload);
       const createdCampaign = res.data?.data;
 
-      // 7. Jika tipe 'instant', langsung antrikan penerima untuk blast dan picu worker
-      if (scheduleType === "instant" && createdCampaign?.id) {
+      // 7. Jika tipe 'instant' atau WhatsApp, langsung antrikan penerima untuk blast
+      if ((scheduleType === "instant" || selectedChannels.includes("WhatsApp")) && createdCampaign?.id) {
         await api.post(`/campaigns/${createdCampaign.id}/schedule`);
         await api.post(`/campaigns/${createdCampaign.id}/send-now`);
       }
@@ -660,7 +825,9 @@ export const NewCampaignPage: React.FC = () => {
 
       toast.success(
         `Kampanye "${campaignName}" berhasil ${
-          scheduleType === "instant" ? "diluncurkan ke antrean blast! 🚀" : "dijadwalkan!"
+          scheduleType === "instant"
+            ? "diluncurkan ke antrean blast! 🚀"
+            : "dijadwalkan!"
         }`
       );
 
@@ -687,81 +854,49 @@ export const NewCampaignPage: React.FC = () => {
         currentStep === 3 ? "max-w-6xl" : "max-w-5xl"
       }`}
     >
-      {/* 1. TOP HEADER & CLOSE / SAVE CONTROLS */}
+      {/* 1. TOP HEADER & CONTROLS */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-200/80 pb-4 gap-3">
         <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-              New Campaign
-            </h1>
-            <span className="rounded-md bg-sky-50 text-sky-700 border border-sky-200/80 px-2 py-0.5 text-[11px] font-bold">
-              Multi-Channel
-            </span>
-          </div>
-          <div className="flex items-center gap-2 mt-1 text-xs text-slate-500">
-            <span>Follow the steps below to create and send your campaign.</span>
-            <span className="text-slate-300">•</span>
-            {!campaignName.trim() && currentStep === 1 ? (
-              <div className="flex items-center gap-1 text-slate-400 font-medium text-[11px]">
-                <span>Form baru</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1 text-emerald-600 font-medium text-[11px]">
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                <span>Draf tersimpan otomatis {lastSavedTime ? `(pk. ${lastSavedTime})` : ""}</span>
-              </div>
-            )}
-          </div>
+          <h1 className="text-xl font-bold tracking-tight text-slate-900">
+            Buat Kampanye
+          </h1>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Tentukan saluran, target audiens, template pesan, dan jadwal peluncuran.
+          </p>
         </div>
 
         <div className="flex items-center gap-2 self-end sm:self-auto">
+          {lastSavedTime && (
+            <span className="text-[11px] text-slate-400 font-medium mr-1">
+              Tersimpan {lastSavedTime}
+            </span>
+          )}
+
           <button
             type="button"
             onClick={handleManualSave}
-            title="Simpan perubahan draf sekarang"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-sky-200/80 bg-sky-50/60 hover:bg-sky-100 text-sky-700 text-xs font-semibold shadow-2xs transition-all cursor-pointer active:scale-95"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium shadow-2xs transition-all cursor-pointer active:scale-95"
           >
-            <Bookmark className="h-3.5 w-3.5 fill-sky-600 text-sky-600" />
-            <span>Simpan Draf</span>
+            <Bookmark className="h-3.5 w-3.5 text-slate-500" />
+            <span>Simpan</span>
           </button>
 
           <button
             type="button"
             onClick={handleAttemptCancel}
-            title="Tutup & Simpan Draft"
-            className="group flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200/90 bg-white hover:bg-rose-50/80 hover:border-rose-200 text-slate-600 hover:text-rose-600 text-xs font-semibold shadow-2xs transition-all duration-150 cursor-pointer active:scale-95"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium shadow-2xs transition-all cursor-pointer active:scale-95"
           >
-            <X className="h-4 w-4 transition-transform group-hover:rotate-90 duration-200" />
+            <X className="h-3.5 w-3.5 text-slate-500" />
             <span>Tutup</span>
           </button>
         </div>
       </div>
 
-      {/* DRAFT RESTORED BANNER */}
-      {hasRestoredDraft && (
-        <div className="flex items-center justify-between rounded-2xl border border-sky-200 bg-sky-50/70 px-4 py-2.5 text-xs text-sky-900 shadow-2xs max-w-3xl w-full mx-auto animate-in fade-in-50">
-          <div className="flex items-center gap-2">
-            <span className="flex h-2 w-2 rounded-full bg-sky-500 animate-pulse" />
-            <span>
-              <strong>Draf Otomatis Aktif:</strong> Melanjutkan data kampanye yang tersimpan{" "}
-              {lastSavedTime ? `(tersimpan pk. ${lastSavedTime})` : ""}. Data Anda 100% aman.
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setShowResetModal(true)}
-            className="text-[11px] font-semibold text-sky-700 hover:text-rose-600 underline cursor-pointer"
-          >
-            Mulai Baru (Reset Draf)
-          </button>
-        </div>
-      )}
-
       {/* 2. STEPPER NAVIGATION */}
       <CampaignWizardStepper
         currentStep={currentStep}
         maxStepReached={maxStepReached}
-        onStepClick={(step) => setCurrentStep(step)}
+        onStepClick={handleStepClick}
       />
 
       {/* 3. MAIN STEP CARD */}
@@ -834,8 +969,10 @@ export const NewCampaignPage: React.FC = () => {
             onSaveTemplate={handleManualSave}
             waSenderName={channelStatus.whatsapp.pushName || "WhatsApp Official"}
             telegramBotName={channelStatus.telegram.botUsername || "Official Telegram Bot"}
-            emailSenderName={channelStatus.email.fromName || "Pengirim Resmi"}
-            emailSenderAddress={channelStatus.email.fromEmail || emailSender || "pengirim@domain.com"}
+            emailSenderName={channelStatus.email.fromName || "Campaign Blast"}
+            emailSenderAddress={channelStatus.email.fromEmail || emailSender || "dev@zerollz.biz.id"}
+            onRefreshTemplates={handleRefreshTemplates}
+            onOpenTemplatesPage={handleOpenTemplatesPage}
           />
         )}
 
@@ -847,8 +984,19 @@ export const NewCampaignPage: React.FC = () => {
             onScheduledDateChange={setScheduledDate}
             scheduledTime={scheduledTime}
             onScheduledTimeChange={setScheduledTime}
+            sendStartTime={sendStartTime}
+            onSendStartTimeChange={setSendStartTime}
+            sendEndTime={sendEndTime}
+            onSendEndTimeChange={setSendEndTime}
+            enableSendingWindow={enableSendingWindow}
+            onEnableSendingWindowChange={setEnableSendingWindow}
+            enableEndDate={enableEndDate}
+            onEnableEndDateChange={setEnableEndDate}
+            endDate={endDate}
+            onEndDateChange={setEndDate}
             throttleRate={throttleRate}
             onThrottleRateChange={setThrottleRate}
+            selectedChannels={selectedChannels}
           />
         )}
 
@@ -861,6 +1009,11 @@ export const NewCampaignPage: React.FC = () => {
             scheduleType={scheduleType}
             scheduledDate={scheduledDate}
             scheduledTime={scheduledTime}
+            sendStartTime={sendStartTime}
+            sendEndTime={sendEndTime}
+            enableSendingWindow={enableSendingWindow}
+            enableEndDate={enableEndDate}
+            endDate={endDate}
             throttleRate={throttleRate}
             emailSubject={emailSubject}
             emailContent={emailContent}
@@ -911,16 +1064,18 @@ export const NewCampaignPage: React.FC = () => {
             </button>
           )}
 
-                    <button
+          <button
             type="button"
-            disabled={!canContinue() || isSubmitting}
+            disabled={isSubmitting}
             onClick={handleNext}
-            className={`flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-xs font-semibold transition cursor-pointer shadow-xs active:scale-95 ${
-              canContinue() && !isSubmitting
-                ? currentStep === 5
-                  ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20"
-                  : "bg-[#0284c7] hover:bg-[#0369a1] text-white shadow-sky-600/20"
-                : "bg-slate-200 text-slate-400 cursor-not-allowed"
+            className={`flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-xs font-semibold transition shadow-xs active:scale-95 cursor-pointer ${
+              isSubmitting
+                ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+                : getStepValidationError(currentStep) !== null
+                ? "bg-slate-200 text-slate-400 hover:bg-slate-300 hover:text-slate-600 shadow-none border border-slate-300/40"
+                : currentStep === 5
+                ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20"
+                : "bg-[#0284c7] hover:bg-[#0369a1] text-white shadow-sky-600/20"
             }`}
           >
             {isSubmitting ? (
@@ -930,7 +1085,13 @@ export const NewCampaignPage: React.FC = () => {
               </>
             ) : (
               <>
-                <span>{currentStep === 5 ? "Luncurkan Kampanye" : "Continue"}</span>
+                <span>
+                  {currentStep === 5
+                    ? scheduleType === "instant"
+                      ? "Luncurkan Kampanye"
+                      : "Jadwalkan Kampanye"
+                    : "Continue"}
+                </span>
                 <ArrowRight className="h-3.5 w-3.5" />
               </>
             )}

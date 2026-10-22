@@ -147,10 +147,10 @@ export const INITIAL_NOTIFICATIONS: NotificationItem[] = [
   },
   {
     id: "notif-007",
-    title: "Saluran Bot Telegram '@AcmePromoBot' Berhasil Diaktifkan",
+    title: "Saluran Bot Telegram '@CampaignBlastBot' Berhasil Diaktifkan",
     desc: "Webhook Telegram Bot API terverifikasi dan siap menerima pesan blast.",
     fullMessage:
-      "Integrasi bot Telegram @AcmePromoBot telah berhasil divalidasi oleh Telegram Bot API Server. Endpoint webhook telah terdaftar dengan status HTTP 200 OK. Saluran ini kini aktif dan dapat langsung dipilih saat membuat kampanye baru.",
+      "Integrasi bot Telegram @CampaignBlastBot telah berhasil divalidasi oleh Telegram Bot API Server. Endpoint webhook telah terdaftar dengan status HTTP 200 OK. Saluran ini kini aktif dan dapat langsung dipilih saat membuat kampanye baru.",
     type: "gateway",
     severity: "success",
     timestamp: "2026-09-23T16:20:00.000Z",
@@ -158,7 +158,7 @@ export const INITIAL_NOTIFICATIONS: NotificationItem[] = [
     isRead: true,
     channel: "Telegram",
     technicalDetails: {
-      deviceId: "@AcmePromoBot",
+      deviceId: "@CampaignBlastBot",
       provider: "Telegram Bot API v7.2",
     },
     actionLabel: "Buka Pengaturan Saluran",

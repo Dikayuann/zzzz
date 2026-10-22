@@ -33,7 +33,7 @@ const INITIAL_MEMBERS: TeamMember[] = [
   {
     id: "mem-1",
     name: "Sarah Admin",
-    email: "sarah@acmecorp.co",
+    email: "sarah@domainanda.com",
     role: "Org Admin",
     status: "Active",
     joinedDate: "Jan 1, 2026",
@@ -43,7 +43,7 @@ const INITIAL_MEMBERS: TeamMember[] = [
   {
     id: "mem-2",
     name: "Rizky Pratama",
-    email: "rizky@acmecorp.co",
+    email: "rizky@domainanda.com",
     role: "Campaign Manager",
     status: "Active",
     joinedDate: "Feb 14, 2026",
@@ -53,7 +53,7 @@ const INITIAL_MEMBERS: TeamMember[] = [
   {
     id: "mem-3",
     name: "Lina Kusuma",
-    email: "lina@acmecorp.co",
+    email: "lina@domainanda.com",
     role: "Editor",
     status: "Active",
     joinedDate: "Mar 3, 2026",
@@ -63,7 +63,7 @@ const INITIAL_MEMBERS: TeamMember[] = [
   {
     id: "mem-4",
     name: "Doni Wicaksono",
-    email: "doni@acmecorp.co",
+    email: "doni@domainanda.com",
     role: "Viewer",
     status: "Active",
     joinedDate: "Apr 20, 2026",
@@ -73,7 +73,7 @@ const INITIAL_MEMBERS: TeamMember[] = [
   {
     id: "mem-5",
     name: "Hani Ramadhani",
-    email: "hani@acmecorp.co",
+    email: "hani@domainanda.com",
     role: "Campaign Manager",
     status: "Pending",
     joinedDate: "Sep 10, 2026",
@@ -438,7 +438,7 @@ export const UsersRolesPage: React.FC = () => {
               <input
                 type="email"
                 required
-                placeholder="alex@acmecorp.co"
+                placeholder="nama@domainanda.com"
                 value={inviteEmail}
                 onChange={(e) => setInviteEmail(e.target.value)}
                 className="w-full h-10 px-3.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-indigo-500"

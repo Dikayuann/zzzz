@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
   MessageSquare,
   Send,
@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import type { DeliveryChannel } from "@/types/campaignWizard";
 import { evaluateMergeTags } from "@/data/mergeTags";
-import { getEmailTheme } from "@/data/emailThemes";
+import { compileTemplateToEmailHtml } from "@/utils/templateParser";
 
 export interface WizardLivePreviewProps {
   activeChannel: DeliveryChannel;
@@ -185,7 +185,7 @@ export const WizardLivePreview: React.FC<WizardLivePreviewProps> = ({
   emailCtaText = "Klaim Penawaran ➔",
   emailCtaUrl = "",
   emailCtaColor = "indigo",
-  emailThemeId = "plain",
+  emailThemeId: _emailThemeId = "plain",
   waSenderName,
   telegramBotName,
   emailSenderName,
@@ -201,27 +201,189 @@ export const WizardLivePreview: React.FC<WizardLivePreviewProps> = ({
     onDeviceViewChange?.(view);
   };
 
-  // Dynamic names & addresses without hardcoded Acme Corp
+  // Dynamic names & addresses without hardcoded placeholders
   const displaySenderName =
     emailSenderName?.trim() ||
-    (emailBrandName && emailBrandName !== "ACME CORP" ? emailBrandName : "") ||
-    "Pengirim Resmi";
+    (emailBrandName && emailBrandName !== "ACME CORP" && emailBrandName !== "Brand Resmi" ? emailBrandName : "") ||
+    "Campaign Blast";
 
   const displaySenderEmail =
-    emailSenderAddress?.trim() || "pengirim@domain.com";
+    emailSenderAddress?.trim() || "dev@zerollz.biz.id";
 
   const avatarInitial = (displaySenderName.trim().charAt(0) || "P").toUpperCase();
 
-  const ctaBgClass =
-    emailCtaColor === "emerald"
-      ? "bg-emerald-600 hover:bg-emerald-700"
-      : emailCtaColor === "rose"
-      ? "bg-rose-600 hover:bg-rose-700"
-      : emailCtaColor === "amber"
-      ? "bg-amber-600 hover:bg-amber-700"
-      : emailCtaColor === "slate"
-      ? "bg-slate-900 hover:bg-black"
-      : "bg-indigo-600 hover:bg-indigo-700";
+  const desktopIframeRef = useRef<HTMLIFrameElement>(null);
+  const mobileIframeRef = useRef<HTMLIFrameElement>(null);
+  const previewViewportRef = useRef<HTMLDivElement>(null);
+  const [viewportWidth, setViewportWidth] = useState<number>(500);
+  const [desktopIframeHeight, setDesktopIframeHeight] = useState<number>(450);
+  const [mobileIframeHeight, setMobileIframeHeight] = useState<number>(450);
+
+  // Measure available container width responsively to auto-scale preview
+  useEffect(() => {
+    const el = previewViewportRef.current;
+    if (!el) return;
+
+    const updateWidth = () => {
+      if (el && el.clientWidth > 0) {
+        setViewportWidth(el.clientWidth);
+      }
+    };
+    updateWidth();
+
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.width > 0) {
+          setViewportWidth(entry.contentRect.width);
+        }
+      }
+    });
+
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [activeChannel, deviceView]);
+
+  const desktopBaseWidth = 600;
+  const desktopScale = useMemo(() => {
+    const available = Math.max(260, viewportWidth - 24);
+    if (available >= desktopBaseWidth) {
+      return 1;
+    }
+    return Math.max(0.4, Number((available / desktopBaseWidth).toFixed(3)));
+  }, [viewportWidth, desktopBaseWidth]);
+
+  // Mobile scale for phone mockup (~298px available width inside 330px phone)
+  const mobileScale = useMemo(() => {
+    return Math.max(0.35, Number((298 / 600).toFixed(3)));
+  }, []);
+
+  const compiledEmailHtml = useMemo(() => {
+    return compileTemplateToEmailHtml({
+      subject: emailSubject || "",
+      content: emailContent || "",
+      orgName: displaySenderName,
+      senderEmail: displaySenderEmail,
+      enableCta: emailCtaEnabled,
+      ctaText: emailCtaText,
+      ctaUrl: emailCtaUrl,
+      ctaColor: emailCtaColor,
+    });
+  }, [
+    emailSubject,
+    emailContent,
+    displaySenderName,
+    displaySenderEmail,
+    emailCtaEnabled,
+    emailCtaText,
+    emailCtaUrl,
+    emailCtaColor,
+  ]);
+
+  const measureActualEmailHeight = (doc: Document): number => {
+    if (!doc || !doc.body) return 380;
+
+    let maxBottom = 0;
+    const elements = doc.body.querySelectorAll(
+      "table, div, p, section, article, h1, h2, h3, h4, h5, h6, img, ul, ol, form"
+    );
+    elements.forEach((el) => {
+      const htmlEl = el as HTMLElement;
+      if (
+        htmlEl.style.display === "none" ||
+        htmlEl.style.visibility === "hidden" ||
+        htmlEl.style.maxHeight === "0px" ||
+        htmlEl.style.maxHeight === "0" ||
+        htmlEl.getAttribute("aria-hidden") === "true"
+      ) {
+        return;
+      }
+      const rect = htmlEl.getBoundingClientRect();
+      if (rect.height > 0) {
+        const bottom = (htmlEl.offsetTop || 0) + (rect.height || htmlEl.offsetHeight || 0);
+        if (bottom > maxBottom) {
+          maxBottom = bottom;
+        }
+      }
+    });
+
+    const bodyH = doc.body.scrollHeight || doc.body.offsetHeight || 0;
+    const docH = doc.documentElement?.scrollHeight || doc.documentElement?.offsetHeight || 0;
+    const measured = Math.max(bodyH, docH, maxBottom + 32, 280);
+    return Math.ceil(measured + 8);
+  };
+
+  const attachPreviewLinkInterceptor = (doc: Document) => {
+    if (!doc || !doc.body) return;
+    doc.body.addEventListener("click", (e: MouseEvent) => {
+      const target = (e.target as HTMLElement).closest("a, button[data-href]");
+      if (target) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    });
+  };
+
+  useEffect(() => {
+    if (activeChannel !== "Email") return;
+    const targetIframe = deviceView === "desktop" ? desktopIframeRef.current : mobileIframeRef.current;
+    if (!targetIframe) return;
+
+    try {
+      const doc = targetIframe.contentDocument || targetIframe.contentWindow?.document;
+      if (doc) {
+        doc.open();
+        doc.write(
+          compiledEmailHtml ||
+            "<!DOCTYPE html><html><body style='margin:0;padding:32px 16px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;color:#94a3b8;text-align:center;font-size:13px;'>(Konten email masih kosong. Tulis isi email di sebelah kiri)</body></html>"
+        );
+        doc.close();
+
+        // Prevent internal scrollbar inside iframe (avoids double scrollbar bug)
+        const noScrollStyle = doc.createElement("style");
+        noScrollStyle.textContent = `
+          html, body {
+            overflow: hidden !important;
+            scrollbar-width: none !important;
+            -ms-overflow-style: none !important;
+          }
+          ::-webkit-scrollbar {
+            display: none !important;
+            width: 0 !important;
+            height: 0 !important;
+          }
+        `;
+        if (doc.head) {
+          doc.head.appendChild(noScrollStyle);
+        }
+
+        attachPreviewLinkInterceptor(doc);
+
+        const updateHeight = () => {
+          try {
+            const measured = measureActualEmailHeight(doc);
+            if (deviceView === "desktop") {
+              setDesktopIframeHeight(measured);
+            } else {
+              setMobileIframeHeight(measured);
+            }
+          } catch {}
+        };
+
+        updateHeight();
+        setTimeout(updateHeight, 150);
+        setTimeout(updateHeight, 500);
+
+        Array.from(doc.images).forEach((img) => {
+          if (!img.complete) {
+            img.addEventListener("load", updateHeight, { once: true });
+            img.addEventListener("error", updateHeight, { once: true });
+          }
+        });
+      }
+    } catch (err) {
+      console.warn("Iframe write error:", err);
+    }
+  }, [compiledEmailHtml, activeChannel, deviceView]);
 
   return (
     <div className="space-y-3">
@@ -306,67 +468,41 @@ export const WizardLivePreview: React.FC<WizardLivePreviewProps> = ({
                 </div>
               </div>
 
-              {/* Scrollable Email Body */}
-              {(() => {
-                const theme = getEmailTheme(emailThemeId);
-                const cfg = theme.config;
-                return (
+              {/* Scrollable Email Body with Fluid Auto-Scaling Preview */}
+              <div
+                ref={previewViewportRef}
+                className="p-3 bg-[#f6f8fc] flex-1 overflow-y-auto overflow-x-hidden flex justify-center items-start"
+              >
                   <div
-                    className="p-4 flex-1 overflow-y-auto"
-                    style={{ background: cfg.outerBg }}
+                    style={{
+                      width: `${Math.round(desktopBaseWidth * desktopScale)}px`,
+                      height: `${Math.round(desktopIframeHeight * desktopScale)}px`,
+                      position: "relative",
+                      overflow: "hidden",
+                      flexShrink: 0,
+                    }}
+                    className="rounded-xl overflow-hidden"
                   >
-                    <div
-                      className="max-w-[460px] mx-auto overflow-hidden text-xs"
+                    <iframe
+                      ref={desktopIframeRef}
+                      title="Email Desktop Preview"
+                      srcDoc={compiledEmailHtml}
+                      sandbox="allow-same-origin"
+                      scrolling="no"
                       style={{
-                        background: cfg.cardBg,
-                        borderRadius: cfg.cardRadius,
-                        boxShadow: cfg.cardShadow,
+                        width: `${desktopBaseWidth}px`,
+                        height: `${desktopIframeHeight}px`,
+                        transform: `scale(${desktopScale})`,
+                        transformOrigin: "top left",
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        overflow: "hidden",
                       }}
-                    >
-                      {/* Body Content */}
-                      <div
-                        style={{
-                          background: cfg.bodyBg,
-                          color: cfg.bodyFg,
-                          padding: cfg.bodyPadding,
-                          fontSize: cfg.bodyFontSize,
-                          lineHeight: cfg.bodyLineHeight,
-                        }}
-                      >
-                        <div className="space-y-3">
-                          {renderFormattedPreview(emailContent, "Email") || (
-                            <span style={{ color: cfg.bodyFg, opacity: 0.4, fontStyle: "italic" }}>
-                              Tulis isi email di sebelah kiri untuk melihat pratinjau di sini...
-                            </span>
-                          )}
-                        </div>
-
-                        {/* CTA Button */}
-                        {emailCtaEnabled && emailCtaText && (
-                          <div style={{ paddingTop: "16px", textAlign: "center" }}>
-                            <a
-                              href={emailCtaUrl || "#"}
-                              target="_blank"
-                              rel="noreferrer"
-                              className={`inline-block font-bold text-xs text-white shadow-sm transition hover:opacity-90 active:scale-95 ${ctaBgClass}`}
-                              style={{
-                                background: cfg.ctaBg !== "#4f46e5" ? cfg.ctaBg : undefined,
-                                color: cfg.ctaFg,
-                                borderRadius: cfg.ctaRadius,
-                                padding: cfg.ctaPadding,
-                                display: "inline-block",
-                                textDecoration: "none",
-                              }}
-                            >
-                              {evaluateMergeTags(emailCtaText)}
-                            </a>
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                      className="border-0 bg-transparent overflow-hidden"
+                    />
                   </div>
-                );
-              })()}
+              </div>
             </div>
           )}
 
@@ -549,69 +685,38 @@ export const WizardLivePreview: React.FC<WizardLivePreviewProps> = ({
                   </div>
                 </div>
 
-                {/* Mobile Scrollable Email Body */}
-                {(() => {
-                  const theme = getEmailTheme(emailThemeId);
-                  const cfg = theme.config;
-                  return (
-                    <div
-                      className="p-3 flex-1 overflow-y-auto"
-                      style={{ background: cfg.outerBg }}
-                    >
-                      <div
-                        className="w-full mx-auto overflow-hidden text-xs"
-                        style={{
-                          background: cfg.cardBg,
-                          borderRadius: cfg.cardRadius,
-                          boxShadow: cfg.cardShadow,
-                        }}
-                      >
-                        {/* Body */}
-                        <div
-                          style={{
-                            background: cfg.bodyBg,
-                            color: cfg.bodyFg,
-                            padding: "12px",
-                            fontSize: cfg.bodyFontSize,
-                            lineHeight: cfg.bodyLineHeight,
-                          }}
-                        >
-                          <div className="space-y-2.5">
-                            {renderFormattedPreview(emailContent, "Email") || (
-                              <span style={{ color: cfg.bodyFg, opacity: 0.4, fontStyle: "italic", fontSize: "11px" }}>
-                                Tulis isi email di sebelah kiri untuk melihat pratinjau di sini...
-                              </span>
-                            )}
-                          </div>
-
-                          {/* CTA Button */}
-                          {emailCtaEnabled && emailCtaText && (
-                            <div style={{ paddingTop: "14px", textAlign: "center" }}>
-                              <a
-                                href={emailCtaUrl || "#"}
-                                target="_blank"
-                                rel="noreferrer"
-                                className={`inline-block font-bold text-xs text-white shadow-sm transition hover:opacity-90 active:scale-95 ${ctaBgClass}`}
-                                style={{
-                                  background: cfg.ctaBg !== "#4f46e5" ? cfg.ctaBg : undefined,
-                                  color: cfg.ctaFg,
-                                  borderRadius: cfg.ctaRadius,
-                                  padding: "8px 16px",
-                                  display: "inline-block",
-                                  textDecoration: "none",
-                                  width: "100%",
-                                  boxSizing: "border-box",
-                                }}
-                              >
-                                {evaluateMergeTags(emailCtaText)}
-                              </a>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
+                {/* Mobile Scrollable Email Body with Fluid Auto-Scaling Preview */}
+                <div className="p-2 flex-1 overflow-y-auto overflow-x-hidden bg-[#f6f8fc] flex justify-center items-start">
+                  <div
+                    style={{
+                      width: `${Math.round(600 * mobileScale)}px`,
+                      height: `${Math.round(mobileIframeHeight * mobileScale)}px`,
+                      position: "relative",
+                      overflow: "hidden",
+                      flexShrink: 0,
+                    }}
+                    className="rounded-lg overflow-hidden"
+                  >
+                    <iframe
+                      ref={mobileIframeRef}
+                      title="Email Mobile Preview"
+                      srcDoc={compiledEmailHtml}
+                      sandbox="allow-same-origin"
+                      scrolling="no"
+                      style={{
+                        width: "600px",
+                        height: `${mobileIframeHeight}px`,
+                        transform: `scale(${mobileScale})`,
+                        transformOrigin: "top left",
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        overflow: "hidden",
+                      }}
+                      className="border-0 bg-transparent overflow-hidden"
+                    />
+                  </div>
+                </div>
 
                 {/* Home Indicator */}
                 <div className="bg-white py-1.5 flex justify-center">

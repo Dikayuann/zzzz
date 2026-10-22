@@ -77,19 +77,19 @@ export const MERGE_TAG_CATEGORIES: MergeTagCategory[] = [
         tag: "org_name",
         label: "Nama Perusahaan / Bisnis",
         desc: "Nama brand resmi pengirim blast",
-        sample: "Acme Corp",
+        sample: "Campaign Blast",
       },
       {
         tag: "sender_name",
         label: "Nama Pengirim",
         desc: "Nama perwakilan staf atau nama pengirim kampanye",
-        sample: "Tim Customer Care Acme",
+        sample: "Tim Layanan Pelanggan",
       },
       {
         tag: "support_email",
         label: "Email Helpdesk",
         desc: "Alamat email customer care untuk balasan",
-        sample: "support@acmecorp.co",
+        sample: "bantuan@domainanda.com",
       },
       {
         tag: "support_phone",
@@ -101,7 +101,7 @@ export const MERGE_TAG_CATEGORIES: MergeTagCategory[] = [
         tag: "website_url",
         label: "Tautan Website",
         desc: "Alamat situs web utama perusahaan",
-        sample: "https://acmecorp.co",
+        sample: "https://domainanda.com",
       },
     ],
   },
@@ -194,13 +194,13 @@ export const MERGE_TAG_CATEGORIES: MergeTagCategory[] = [
         tag: "unsubscribe_link",
         label: "Tautan Berhenti Langganan",
         desc: "Link opt-out wajib untuk email marketing",
-        sample: "https://acmecorp.co/unsubscribe",
+        sample: "https://domainanda.com/unsubscribe",
       },
       {
         tag: "cta_link",
         label: "Tautan Aksi Utama (CTA)",
         desc: "Tautan tujuan tombol utama kampanye",
-        sample: "https://acmecorp.co/claim-promo",
+        sample: "https://domainanda.com/promo",
       },
       {
         tag: "otp",
@@ -212,7 +212,7 @@ export const MERGE_TAG_CATEGORIES: MergeTagCategory[] = [
         tag: "web_view_link",
         label: "Tautan Buka di Browser",
         desc: "Versi web HTML online dari pesan",
-        sample: "https://acmecorp.co/view-online",
+        sample: "https://domainanda.com/view-online",
       },
     ],
   },
@@ -239,12 +239,12 @@ export const evaluateMergeTags = (rawContent: string): string => {
     gender: "Laki-laki",
 
     // Business
-    org_name: "Acme Corp",
-    company_name: "Acme Corp",
-    sender_name: "Tim Customer Care Acme",
-    support_email: "support@acmecorp.co",
+    org_name: "Campaign Blast",
+    company_name: "Campaign Blast",
+    sender_name: "Tim Layanan Pelanggan",
+    support_email: "bantuan@domainanda.com",
     support_phone: "+62 811-2233-4455",
-    website_url: "https://acmecorp.co",
+    website_url: "https://domainanda.com",
 
     // Commerce
     voucher: "VIP99",
@@ -266,10 +266,10 @@ export const evaluateMergeTags = (rawContent: string): string => {
     jam: new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }),
 
     // Links & Security
-    unsubscribe_link: "https://acmecorp.co/unsubscribe",
-    cta_link: "https://acmecorp.co/claim-promo",
+    unsubscribe_link: "https://domainanda.com/unsubscribe",
+    cta_link: "https://domainanda.com/promo",
     otp: "849201",
-    web_view_link: "https://acmecorp.co/view-online",
+    web_view_link: "https://domainanda.com/view-online",
   };
 
   let evaluated = rawContent;

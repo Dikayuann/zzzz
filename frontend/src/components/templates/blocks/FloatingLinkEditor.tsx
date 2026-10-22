@@ -75,7 +75,7 @@ export const FloatingLinkEditor: React.FC<FloatingLinkEditorProps> = ({
           { label: "{{cta_link}}", val: "{{cta_link}}" },
           { label: "{{web_view_link}}", val: "{{web_view_link}}" },
           { label: "{{unsubscribe_link}}", val: "{{unsubscribe_link}}" },
-          { label: "Website", val: "https://acmecorp.co" },
+          { label: "Website", val: "https://domainanda.com" },
           { label: "WhatsApp", val: "https://wa.me/6281234567890" },
         ].map((chip) => (
           <button

@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   TemplateHeader,
   TemplateEditorPanel,
@@ -10,9 +11,43 @@ import {
 import { MergeTagsModal } from "@/components/campaigns/MergeTagsModal";
 import { useTemplateEditor } from "@/hooks/useTemplateEditor";
 import { compileTemplateToEmailHtml } from "@/utils/templateParser";
-import { Columns2, Edit3, Eye } from "lucide-react";
+import { Columns2, Edit3, Eye, ArrowRight } from "lucide-react";
+import { api } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
 
 export const TemplatesPage: React.FC = () => {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const urlTemplateId = searchParams.get("id");
+  const returnTo = searchParams.get("returnTo") || "/campaigns/new";
+  const fromCampaign = searchParams.get("from") === "campaign" || Boolean(searchParams.get("returnTo"));
+
+  const { user } = useAuth();
+  const [smtpSender, setSmtpSender] = useState<{ name: string; email: string }>({
+    name: user?.name || "Campaign Blast",
+    email: user?.email || "dev@zerollz.biz.id",
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+    api
+      .get("/settings/smtp")
+      .then((res) => {
+        if (!isMounted) return;
+        const data = res.data?.data;
+        if (data?.fromEmail) {
+          setSmtpSender({
+            name: data.fromName || user?.name || "Campaign Blast",
+            email: data.fromEmail,
+          });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, [user]);
+
   const {
     templateId,
     title,
@@ -76,6 +111,16 @@ export const TemplatesPage: React.FC = () => {
     handleSelectMergeTag,
   } = useTemplateEditor();
 
+  // Auto-select template if ?id= is passed in URL and templates are loaded
+  useEffect(() => {
+    if (urlTemplateId && savedTemplates.length > 0 && !templateId) {
+      const match = savedTemplates.find((t) => String(t.id) === String(urlTemplateId));
+      if (match) {
+        handleSelectSavedTemplate(match);
+      }
+    }
+  }, [urlTemplateId, savedTemplates, templateId]);
+
   const [isTestSendModalOpen, setIsTestSendModalOpen] = useState(false);
   const [isUnsavedChangesModalOpen, setIsUnsavedChangesModalOpen] = useState(false);
   const [layoutMode, setLayoutMode] = useState<"split" | "editor" | "preview">("split");
@@ -100,8 +145,8 @@ export const TemplatesPage: React.FC = () => {
       subject,
       preheader,
       content: emailContent || content,
-      orgName: "Acme Corp",
-      senderEmail: "hello@acmecorp.co",
+      orgName: smtpSender.name,
+      senderEmail: smtpSender.email,
       recipient,
       brandColor,
       enableLogo,
@@ -142,6 +187,29 @@ export const TemplatesPage: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-in fade-in-50 duration-200">
+      {/* BANNER: DARI KAMPANYE */}
+      {fromCampaign && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-sky-200 bg-sky-50/90 px-4 py-3 text-xs text-sky-900 shadow-2xs animate-in fade-in-50">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-2.5 w-2.5 rounded-full bg-sky-500 animate-pulse shrink-0" />
+            <div>
+              <p className="font-bold">Mode Edit Template untuk Kampanye</p>
+              <p className="text-[11px] text-sky-700">
+                Setelah selesai mengedit dan menyimpan template, klik tombol di sebelah kanan untuk langsung kembali ke wizard kampanye.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate(returnTo)}
+            className="flex items-center gap-1.5 self-end sm:self-auto px-3.5 py-1.5 rounded-xl border border-sky-300 bg-white hover:bg-sky-50 text-xs font-bold text-sky-700 shadow-2xs transition cursor-pointer active:scale-95"
+          >
+            <span>Kembali ke Wizard Kampanye</span>
+            <ArrowRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* 1. TOP HEADER & CONTROLS */}
       <TemplateHeader
         title={title}
@@ -323,8 +391,8 @@ export const TemplatesPage: React.FC = () => {
               subject={subject}
               preheader={preheader}
               content={content}
-              orgName="Acme Corp"
-              senderEmail="hello@acmecorp.co"
+              orgName={smtpSender.name}
+              senderEmail={smtpSender.email}
               brandColor={brandColor}
               recipient={recipient}
               onRecipientChange={setRecipient}

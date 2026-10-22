@@ -221,9 +221,11 @@ export const SmtpChannelTab: React.FC<SmtpChannelTabProps> = ({ onStatusChange }
     }
   };
 
-  const handleDisconnectSmtp = async () => {
-    if (!confirm("Apakah Anda yakin ingin memutuskan dan menghapus konfigurasi server SMTP Email ini?")) return;
+  const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
 
+  const handleConfirmDisconnectSmtp = async () => {
+    setIsDisconnecting(true);
     try {
       await api.delete("/settings/smtp");
       setSmtpConnected(false);
@@ -240,9 +242,12 @@ export const SmtpChannelTab: React.FC<SmtpChannelTabProps> = ({ onStatusChange }
         replyTo: "",
         hasPassword: false,
       });
+      setShowDisconnectConfirm(false);
       toast.success("Konfigurasi SMTP Email berhasil diputuskan");
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Gagal memutuskan konfigurasi SMTP");
+    } finally {
+      setIsDisconnecting(false);
     }
   };
 
@@ -417,7 +422,7 @@ export const SmtpChannelTab: React.FC<SmtpChannelTabProps> = ({ onStatusChange }
                 type="text"
                 value={smtpConfig.fromName}
                 onChange={(e) => setSmtpConfig({ ...smtpConfig, fromName: e.target.value })}
-                placeholder="Acme Broadcast"
+                placeholder="Brand Anda"
                 className="w-full h-11 px-4 rounded-xl border border-slate-200/90 bg-slate-50/40 focus:bg-white text-xs text-slate-800 focus:outline-none focus:border-sky-500 transition shadow-2xs"
               />
             </div>
@@ -461,7 +466,7 @@ export const SmtpChannelTab: React.FC<SmtpChannelTabProps> = ({ onStatusChange }
             {(smtpConnected || smtpConfig.hasPassword) && (
               <button
                 type="button"
-                onClick={handleDisconnectSmtp}
+                onClick={() => setShowDisconnectConfirm(true)}
                 className="w-full sm:w-auto justify-center px-3.5 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 text-xs font-semibold transition cursor-pointer active:scale-95"
               >
                 Putuskan SMTP
@@ -517,6 +522,41 @@ export const SmtpChannelTab: React.FC<SmtpChannelTabProps> = ({ onStatusChange }
                 <span>{isTestingSmtp ? "Mengirim Email..." : "Kirim Email Tes"}</span>
               </button>
             </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* In-App Disconnect Confirmation Dialog */}
+      <Dialog open={showDisconnectConfirm} onOpenChange={setShowDisconnectConfirm}>
+        <DialogContent className="sm:max-w-md p-6 rounded-2xl bg-white border border-slate-200 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <div className="h-8 w-8 rounded-xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center">
+                <Mail className="h-4 w-4" />
+              </div>
+              <span>Putuskan Konfigurasi SMTP?</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500 mt-1">
+              Apakah Anda yakin ingin memutuskan dan menghapus konfigurasi server SMTP Email ini dari sistem?
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100 mt-2">
+            <button
+              type="button"
+              onClick={() => setShowDisconnectConfirm(false)}
+              className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+            >
+              Batal
+            </button>
+            <button
+              type="button"
+              disabled={isDisconnecting}
+              onClick={handleConfirmDisconnectSmtp}
+              className="px-4 py-2 rounded-xl bg-rose-600 text-xs font-bold text-white shadow-xs hover:bg-rose-700 transition cursor-pointer disabled:opacity-50"
+            >
+              {isDisconnecting ? "Memutuskan..." : "Ya, Putuskan SMTP"}
+            </button>
           </div>
         </DialogContent>
       </Dialog>

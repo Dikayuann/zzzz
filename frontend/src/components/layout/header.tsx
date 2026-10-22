@@ -218,10 +218,10 @@ export const Header: React.FC = () => {
             >
               <div className="px-3 py-2.5 bg-slate-50 rounded-xl mb-1">
                 <p className="text-xs font-bold text-slate-900 truncate">
-                  {user?.name || "Sarah Admin"}
+                  {user?.name || "Admin"}
                 </p>
                 <p className="text-[11px] text-slate-500 truncate">
-                  {user?.email || "sarah@acmecorp.co"}
+                  {user?.email || "admin@campaignblast.id"}
                 </p>
                 <span className="inline-block mt-1 px-1.5 py-0.2 rounded-md bg-sky-100 text-sky-700 font-semibold text-[10px]">
                   {user?.roles?.[0] || "ADMIN"}

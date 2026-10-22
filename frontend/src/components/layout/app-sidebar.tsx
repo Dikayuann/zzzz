@@ -128,25 +128,25 @@ export const AppSidebar: React.FC = () => {
             </div>
           )}
 
-          {/* Workspace Dropdown Switcher (Acme Corp) */}
+          {/* Workspace Dropdown Switcher */}
           {isCollapsed ? (
             <Tooltip>
               <TooltipTrigger asChild>
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-100 text-sky-700 font-bold text-xs border border-sky-200/70 cursor-pointer hover:bg-sky-200/60 transition">
-                  A
+                  W
                 </div>
               </TooltipTrigger>
               <TooltipContent side="right" align="center" sideOffset={14} className="z-50 font-medium text-xs bg-slate-900 text-white shadow-xl px-2.5 py-1.5 rounded-lg border border-slate-800">
-                Acme Corp
+                Workspace Utama
               </TooltipContent>
             </Tooltip>
           ) : (
             <div className="flex items-center gap-2.5 px-2.5 py-2 rounded-xl bg-sky-50/60 border border-sky-100 hover:bg-sky-100/60 transition-colors cursor-pointer">
               <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-sky-500 text-white font-bold text-xs shrink-0 shadow-2xs">
-                A
+                W
               </div>
               <span className="truncate font-semibold text-xs text-slate-800 flex-1">
-                Acme Corp
+                Workspace Utama
               </span>
               <ChevronDown className="h-3.5 w-3.5 text-slate-400 shrink-0" />
             </div>
@@ -245,10 +245,10 @@ export const AppSidebar: React.FC = () => {
                   </div>
                   <div className="flex flex-col flex-1 min-w-0 leading-tight">
                     <span className="truncate font-bold text-xs text-slate-900">
-                      {user?.name || "Sarah Admin"}
+                      {user?.name || "Admin"}
                     </span>
                     <span className="truncate text-[11px] text-slate-400 font-normal">
-                      {user?.email || "sarah@acmecorp.co"}
+                      {user?.email || "admin@campaignblast.id"}
                     </span>
                   </div>
                 </button>

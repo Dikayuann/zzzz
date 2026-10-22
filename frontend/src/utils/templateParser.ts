@@ -79,7 +79,7 @@ export function isRawHtml(content: string): boolean {
 export function interpolateMergeTags(
   text: string,
   recipient: RecipientPreview,
-  orgName: string = "Acme Corp"
+  orgName: string = "Campaign Blast"
 ): string {
   if (!text) return "";
 
@@ -104,10 +104,10 @@ export function interpolateMergeTags(
     org_name: orgName,
     company_name: orgName,
     sender_name: `Tim ${orgName}`,
-    support_email: "support@acmecorp.co",
+    support_email: "bantuan@domainanda.com",
     support_phone: "+62 811-2233-4455",
-    website_url: "https://acmecorp.co",
-    alamat_kantor: "PT Acme Digital Nusantara, Jakarta, Indonesia",
+    website_url: "https://domainanda.com",
+    alamat_kantor: "Jakarta, Indonesia",
 
     // Commerce / Promo details
     kode_promo: "PROMO2026",
@@ -134,7 +134,7 @@ export function interpolateMergeTags(
 
     // Links & Utilities
     unsubscribe_link: "#unsubscribe",
-    cta_link: "https://acmecorp.co/promo",
+    cta_link: "https://domainanda.com/promo",
     web_view_link: "#view-online",
     otp: "849201",
   };
@@ -187,7 +187,8 @@ export function applyToolbarAction(
   textarea: HTMLTextAreaElement,
   action: ToolbarAction,
   currentValue: string,
-  channel: TemplateChannel = "email"
+  channel: TemplateChannel = "email",
+  customUrl?: string
 ): string {
   const start = textarea.selectionStart;
   const end = textarea.selectionEnd;
@@ -378,9 +379,7 @@ export function applyToolbarAction(
     }
 
     case "link": {
-      const defaultUrl = "https://";
-      const enteredUrl = window.prompt("Masukkan URL tautan (contoh: https://tokoonline.com):", defaultUrl);
-      if (!enteredUrl) return currentValue;
+      const enteredUrl = customUrl || "https://";
 
       if (selectedText) {
         const linkSnippet = `[${selectedText}](${enteredUrl})`;
@@ -643,8 +642,8 @@ export function compileTemplateToEmailHtml({
   subject,
   preheader,
   content,
-  orgName = "Acme Corp",
-  senderEmail = "hello@acmecorp.co",
+  orgName = "Campaign Blast",
+  senderEmail = "dev@zerollz.biz.id",
   recipient = SAMPLE_RECIPIENTS[0],
   brandColor = "#4F46E5",
   // Custom Logo Props
@@ -654,11 +653,11 @@ export function compileTemplateToEmailHtml({
   logoAlign = "center",
   enableCta = false,
   ctaText = "Klaim Voucher Sekarang",
-  ctaUrl = "https://tokoonline.com/promo",
+  ctaUrl = "https://domainanda.com/promo",
   ctaColor = "#4F46E5",
   enableSocial = false,
-  websiteUrl = "https://acmecorp.co",
-  instagramUrl = "https://instagram.com/acmecorp",
+  websiteUrl = "https://domainanda.com",
+  instagramUrl = "https://instagram.com/brandanda",
   whatsappUrl = "https://wa.me/6281234567890",
   footerAddress = "",
 }: {

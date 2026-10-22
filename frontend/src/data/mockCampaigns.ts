@@ -14,7 +14,7 @@ export const INITIAL_CAMPAIGNS: CampaignItem[] = [
     openRate: 88.5,
     clickRate: 34.2,
     messageContent:
-      "🔥 *FLASH SALE 9.9 DIMULAI!* 🔥\n\nHalo {{nama}}, nikmati diskon spesial s.d 70% hanya untuk member VIP hari ini. Gunakan kode: *VIP99* saat checkout sebelum jam 23:59 WIB!\n\nLink promo: https://acmecorp.co/vip-sale",
+      "🔥 *FLASH SALE 9.9 DIMULAI!* 🔥\n\nHalo {{nama}}, nikmati diskon spesial s.d 70% hanya untuk member VIP hari ini. Gunakan kode: *VIP99* saat checkout sebelum jam 23:59 WIB!\n\nLink promo: https://domainanda.com/vip-sale",
   },
   {
     id: "cmp-02",

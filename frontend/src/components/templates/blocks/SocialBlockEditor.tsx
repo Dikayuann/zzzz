@@ -17,9 +17,9 @@ export interface SocialBlockEditorProps {
 export const SocialBlockEditor: React.FC<SocialBlockEditorProps> = ({
   enableSocial = false,
   onEnableSocialChange,
-  websiteUrl = "https://acmecorp.co",
+  websiteUrl = "https://domainanda.com",
   onWebsiteUrlChange,
-  instagramUrl = "https://instagram.com/acmecorp",
+  instagramUrl = "https://instagram.com/brandanda",
   onInstagramUrlChange,
   whatsappUrl = "https://wa.me/6281234567890",
   onWhatsappUrlChange,
@@ -64,7 +64,7 @@ export const SocialBlockEditor: React.FC<SocialBlockEditorProps> = ({
               type="text"
               value={websiteUrl}
               onChange={(e) => onWebsiteUrlChange?.(e.target.value)}
-              placeholder="https://acmecorp.co"
+              placeholder="https://domainanda.com"
               className="w-full h-7 px-2 rounded-lg border border-slate-200 text-xs text-slate-800"
             />
           </div>
@@ -76,7 +76,7 @@ export const SocialBlockEditor: React.FC<SocialBlockEditorProps> = ({
               type="text"
               value={instagramUrl}
               onChange={(e) => onInstagramUrlChange?.(e.target.value)}
-              placeholder="https://instagram.com/acme"
+              placeholder="https://instagram.com/brandanda"
               className="w-full h-7 px-2 rounded-lg border border-slate-200 text-xs text-slate-800"
             />
           </div>

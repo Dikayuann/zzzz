@@ -42,22 +42,22 @@ export const CampaignWizardStepper: React.FC<CampaignWizardStepperProps> = ({
               }`}
             >
               <div
-                className={`flex h-8 w-8 items-center justify-center rounded-full font-bold text-xs transition-all duration-200 ${
+                className={`flex h-7 w-7 items-center justify-center rounded-full font-medium text-xs transition-all duration-150 ${
                   isCurrent
-                    ? "bg-[#0284c7] text-white ring-4 ring-sky-100 shadow-sm"
+                    ? "bg-slate-900 text-white shadow-xs"
                     : isCompleted
-                    ? "bg-emerald-500 text-white shadow-xs"
-                    : "bg-white border-2 border-slate-300 text-slate-500"
+                    ? "bg-slate-100 text-slate-800 border border-slate-300"
+                    : "bg-white border border-slate-200 text-slate-400"
                 }`}
               >
-                {isCompleted && !isCurrent ? <Check className="h-4 w-4 stroke-[3]" /> : s.num}
+                {isCompleted && !isCurrent ? <Check className="h-3.5 w-3.5 stroke-[2.5]" /> : s.num}
               </div>
               <span
-                className={`text-xs font-semibold ${
+                className={`text-xs ${
                   isCurrent
-                    ? "text-[#0284c7]"
+                    ? "font-semibold text-slate-900"
                     : isCompleted
-                    ? "text-slate-700"
+                    ? "font-medium text-slate-700"
                     : "text-slate-400"
                 }`}
               >

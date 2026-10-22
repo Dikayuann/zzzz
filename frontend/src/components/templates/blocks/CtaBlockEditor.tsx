@@ -25,7 +25,7 @@ export const CtaBlockEditor: React.FC<CtaBlockEditorProps> = ({
   onEnableCtaChange,
   ctaText = "Klaim Voucher Sekarang",
   onCtaTextChange,
-  ctaUrl = "https://tokoonline.com/promo",
+  ctaUrl = "https://domainanda.com/promo",
   onCtaUrlChange,
   ctaColor = "#4F46E5",
   onCtaColorChange,
@@ -81,7 +81,7 @@ export const CtaBlockEditor: React.FC<CtaBlockEditorProps> = ({
               type="text"
               value={ctaUrl}
               onChange={(e) => onCtaUrlChange?.(e.target.value)}
-              placeholder="https://tokoonline.com/promo"
+              placeholder="https://domainanda.com/promo"
               className="w-full h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
             />
           </div>

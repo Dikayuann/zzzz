@@ -22,6 +22,13 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { MergeTagsModal } from "@/components/campaigns/MergeTagsModal";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 
 interface RichCampaignEditorProps {
   value: string;
@@ -102,16 +109,55 @@ export const RichCampaignEditor: React.FC<RichCampaignEditorProps> = ({
     toast.success(`Variabel ${mergeTag} disisipkan!`);
   };
 
-  const handleSetLink = () => {
-    const previousUrl = editor.getAttributes("link").href;
-    const url = window.prompt("Masukkan tautan URL (contoh: https://acmecorp.co):", previousUrl || "https://");
-    if (url === null) return;
-    if (url === "") {
+  const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
+  const [linkUrl, setLinkUrl] = useState("");
+  const [linkOpenInNewTab, setLinkOpenInNewTab] = useState(true);
+
+  const handleOpenLinkModal = () => {
+    const previousUrl = editor.getAttributes("link").href || "";
+    setLinkUrl(previousUrl);
+    setLinkOpenInNewTab(true);
+    setIsLinkModalOpen(true);
+  };
+
+  const handleApplyLink = () => {
+    const trimmed = linkUrl.trim();
+    if (!trimmed) {
       editor.chain().focus().extendMarkRange("link").unsetLink().run();
+      setIsLinkModalOpen(false);
       return;
     }
-    editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
+
+    let finalUrl = trimmed;
+    if (
+      !trimmed.startsWith("http://") &&
+      !trimmed.startsWith("https://") &&
+      !trimmed.startsWith("mailto:") &&
+      !trimmed.startsWith("tel:") &&
+      !trimmed.startsWith("{{") &&
+      !trimmed.startsWith("#")
+    ) {
+      finalUrl = `https://${trimmed}`;
+    }
+
+    editor
+      .chain()
+      .focus()
+      .extendMarkRange("link")
+      .setLink({
+        href: finalUrl,
+        target: linkOpenInNewTab ? "_blank" : undefined,
+      })
+      .run();
+
+    setIsLinkModalOpen(false);
     toast.success("Tautan berhasil disisipkan!");
+  };
+
+  const handleRemoveLink = () => {
+    editor.chain().focus().extendMarkRange("link").unsetLink().run();
+    setIsLinkModalOpen(false);
+    toast.success("Tautan dihapus!");
   };
 
   const canUndo = editor.can().undo();
@@ -311,7 +357,7 @@ export const RichCampaignEditor: React.FC<RichCampaignEditorProps> = ({
           {/* LINK */}
           <button
             type="button"
-            onClick={handleSetLink}
+            onClick={handleOpenLinkModal}
             title="Sisipkan Tautan Web"
             className={`p-1.5 rounded-lg transition cursor-pointer ${
               editor.isActive("link")
@@ -391,6 +437,109 @@ export const RichCampaignEditor: React.FC<RichCampaignEditorProps> = ({
         onOpenChange={setShowMergeModal}
         onSelectTag={handleInsertTag}
       />
+
+      {/* Sleek In-App Link Modal Dialog */}
+      <Dialog open={isLinkModalOpen} onOpenChange={setIsLinkModalOpen}>
+        <DialogContent className="sm:max-w-md p-6 rounded-2xl bg-white border border-slate-200 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <div className="h-8 w-8 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center">
+                <LinkIcon className="h-4 w-4" />
+              </div>
+              <span>Sisipkan atau Edit Tautan</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500 mt-1">
+              Masukkan alamat URL website atau pilih tag variabel dinamis untuk teks yang dipilih.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-700">Alamat URL Tautan</label>
+              <input
+                type="text"
+                value={linkUrl}
+                onChange={(e) => setLinkUrl(e.target.value)}
+                placeholder="https://domainanda.com/promo atau {{unsubscribe_link}}"
+                className="w-full h-10 rounded-xl border border-slate-200 bg-white px-3.5 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 shadow-2xs font-mono"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleApplyLink();
+                  }
+                }}
+              />
+            </div>
+
+            {/* Quick Tag Recommendations for Email Links */}
+            <div className="space-y-1.5">
+              <span className="text-[11px] font-medium text-slate-500 block">
+                Tag Cepat (Email):
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { label: "Unsubscribe", tag: "{{unsubscribe_link}}" },
+                  { label: "Lihat di Web", tag: "{{web_view_link}}" },
+                  { label: "CTA Promo", tag: "{{cta_link}}" },
+                ].map((item) => (
+                  <button
+                    key={item.tag}
+                    type="button"
+                    onClick={() => setLinkUrl(item.tag)}
+                    className="text-[11px] font-mono px-2 py-1 rounded-lg bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 border border-slate-200 text-slate-700 transition cursor-pointer"
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Open in new tab checkbox */}
+            <label className="flex items-center gap-2 cursor-pointer pt-1 text-xs text-slate-700 font-medium">
+              <input
+                type="checkbox"
+                checked={linkOpenInNewTab}
+                onChange={(e) => setLinkOpenInNewTab(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <span>Buka tautan di tab baru (target="_blank")</span>
+            </label>
+          </div>
+
+          <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 mt-2">
+            <div>
+              {editor.isActive("link") && (
+                <button
+                  type="button"
+                  onClick={handleRemoveLink}
+                  className="px-3 py-2 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-xs font-semibold hover:bg-rose-100 transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <Unlink className="h-3.5 w-3.5" />
+                  <span>Hapus Tautan</span>
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsLinkModalOpen(false)}
+                className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleApplyLink}
+                className="px-4 py-2 rounded-xl bg-indigo-600 text-xs font-bold text-white shadow-xs hover:bg-indigo-700 transition cursor-pointer"
+              >
+                Terapkan Tautan
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

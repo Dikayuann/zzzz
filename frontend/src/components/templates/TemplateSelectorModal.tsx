@@ -68,20 +68,24 @@ export const TemplateSelectorModal: React.FC<TemplateSelectorModalProps> = ({
     rawChannel === "whatsapp" || rawChannel === "telegram" ? rawChannel : "email";
   const [activeTab, setActiveTab] = useState<"presets" | "saved">("presets");
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [templateToDelete, setTemplateToDelete] = useState<{ id: number; name: string } | null>(null);
 
   const channelPresets = PRESET_TEMPLATES.filter((p) => p.channel === channel);
 
-  const handleDeleteSaved = async (e: React.MouseEvent, id: number, name: string) => {
+  const handleRequestDelete = (e: React.MouseEvent, id: number, name: string) => {
     e.stopPropagation();
-    if (!window.confirm(`Hapus template "${name}"? Tindakan ini tidak dapat dibatalkan.`)) {
-      return;
-    }
+    setTemplateToDelete({ id, name });
+  };
 
+  const handleConfirmDelete = async () => {
+    if (!templateToDelete) return;
+    const { id, name } = templateToDelete;
     setDeletingId(id);
     try {
       await api.delete(`/templates/${id}`);
       toast.success(`Template "${name}" berhasil dihapus.`);
       onRefreshSavedTemplates();
+      setTemplateToDelete(null);
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Gagal menghapus template");
     } finally {
@@ -268,7 +272,7 @@ export const TemplateSelectorModal: React.FC<TemplateSelectorModalProps> = ({
                             <button
                               type="button"
                               disabled={deletingId === item.id}
-                              onClick={(e) => handleDeleteSaved(e, item.id, item.name)}
+                              onClick={(e) => handleRequestDelete(e, item.id, item.name)}
                               className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
                               title="Hapus template"
                             >
@@ -328,6 +332,41 @@ export const TemplateSelectorModal: React.FC<TemplateSelectorModalProps> = ({
           </button>
         </div>
       </DialogContent>
+
+      {/* In-App Delete Confirmation Dialog */}
+      <Dialog open={Boolean(templateToDelete)} onOpenChange={(isOpen) => !isOpen && setTemplateToDelete(null)}>
+        <DialogContent className="sm:max-w-md p-6 rounded-2xl bg-white border border-slate-200 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <div className="h-8 w-8 rounded-xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center">
+                <Trash2 className="h-4 w-4" />
+              </div>
+              <span>Konfirmasi Hapus Template</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500 mt-1">
+              Apakah Anda yakin ingin menghapus template <strong>"{templateToDelete?.name}"</strong>? Tindakan ini tidak dapat dibatalkan.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100 mt-2">
+            <button
+              type="button"
+              onClick={() => setTemplateToDelete(null)}
+              className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+            >
+              Batal
+            </button>
+            <button
+              type="button"
+              disabled={deletingId !== null}
+              onClick={handleConfirmDelete}
+              className="px-4 py-2 rounded-xl bg-rose-600 text-xs font-bold text-white shadow-xs hover:bg-rose-700 transition cursor-pointer disabled:opacity-50"
+            >
+              {deletingId !== null ? "Menghapus..." : "Ya, Hapus Template"}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 };

@@ -17,7 +17,7 @@ export const AccountSettingsPage: React.FC = () => {
   const [firstName, setFirstName] = useState("Sarah");
   const [lastName, setLastName] = useState("Admin");
   const [emailAddress, setEmailAddress] = useState("admin@campaignblast.id");
-  const [orgName, setOrgName] = useState("Acme Corporation");
+  const [orgName, setOrgName] = useState("Perusahaan Saya");
   const [timezone, setTimezone] = useState("Asia/Jakarta (WIB, UTC+7)");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 

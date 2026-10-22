@@ -196,9 +196,11 @@ export const TelegramChannelTab: React.FC<TelegramChannelTabProps> = ({ onStatus
     }
   };
 
-  const handleDisconnectTelegram = async () => {
-    if (!confirm("Apakah Anda yakin ingin memutuskan koneksi Bot Telegram ini?")) return;
+  const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
 
+  const handleConfirmDisconnectTelegram = async () => {
+    setIsDisconnecting(true);
     try {
       await api.delete("/channels/telegram");
       setTelegramConnected(false);
@@ -209,9 +211,12 @@ export const TelegramChannelTab: React.FC<TelegramChannelTabProps> = ({ onStatus
         targetChatId: "",
         parseMode: "HTML",
       });
+      setShowDisconnectConfirm(false);
       toast.success("Koneksi Bot Telegram berhasil diputus");
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Gagal memutus koneksi Bot Telegram");
+    } finally {
+      setIsDisconnecting(false);
     }
   };
 
@@ -376,7 +381,7 @@ export const TelegramChannelTab: React.FC<TelegramChannelTabProps> = ({ onStatus
             {telegramConnected && (
               <button
                 type="button"
-                onClick={handleDisconnectTelegram}
+                onClick={() => setShowDisconnectConfirm(true)}
                 className="w-full sm:w-auto justify-center px-4 py-2.5 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 text-xs font-semibold transition cursor-pointer"
               >
                 Putuskan Bot
@@ -505,6 +510,41 @@ export const TelegramChannelTab: React.FC<TelegramChannelTabProps> = ({ onStatus
                 <span>{isTestingTelegram ? "Mengirim Pesan..." : "Kirim ke Telegram"}</span>
               </button>
             </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* In-App Disconnect Confirmation Dialog */}
+      <Dialog open={showDisconnectConfirm} onOpenChange={setShowDisconnectConfirm}>
+        <DialogContent className="sm:max-w-md p-6 rounded-2xl bg-white border border-slate-200 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <div className="h-8 w-8 rounded-xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center">
+                <Send className="h-4 w-4" />
+              </div>
+              <span>Putuskan Koneksi Bot Telegram?</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500 mt-1">
+              Apakah Anda yakin ingin memutuskan koneksi Bot Telegram ini dari sistem?
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100 mt-2">
+            <button
+              type="button"
+              onClick={() => setShowDisconnectConfirm(false)}
+              className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+            >
+              Batal
+            </button>
+            <button
+              type="button"
+              disabled={isDisconnecting}
+              onClick={handleConfirmDisconnectTelegram}
+              className="px-4 py-2 rounded-xl bg-rose-600 text-xs font-bold text-white shadow-xs hover:bg-rose-700 transition cursor-pointer disabled:opacity-50"
+            >
+              {isDisconnecting ? "Memutuskan..." : "Ya, Putuskan Bot"}
+            </button>
           </div>
         </DialogContent>
       </Dialog>

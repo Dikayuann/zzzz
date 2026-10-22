@@ -11,7 +11,7 @@ export const INITIAL_AUDIT_LOGS: AuditLogItem[] = [
   },
   {
     id: "log-2",
-    action: "Invited new team member (hani@acmecorp.co)",
+    action: "Invited new team member (hani@domainanda.com)",
     actor: "Sarah Admin",
     ip: "182.1.24.89",
     timestamp: "25 minutes ago",
