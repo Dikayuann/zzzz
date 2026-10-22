@@ -13,6 +13,39 @@ const randomDelay = (minMs: number, maxMs: number) => {
     return new Promise((resolve) => setTimeout(resolve, ms));
 };
 
+// Helper pengecekan apakah kampanye sudah melewati batas akhir tanggal (Expiry Cutoff)
+export const isCampaignExpired = (rule: string | null): boolean => {
+    if (!rule || !rule.includes("until:")) return false;
+    const match = rule.match(/until:([0-9]{4}-[0-9]{2}-[0-9]{2})/);
+    if (!match || !match[1]) return false;
+    // Expired pada akhir hari batas (23:59:59 WIB)
+    const cutoffDate = new Date(`${match[1]}T23:59:59+07:00`);
+    return Date.now() > cutoffDate.getTime();
+};
+
+// Helper pengecekan jam operasional pengiriman (Sending Window WIB)
+export const isWithinSendingWindow = (rule: string | null): boolean => {
+    if (!rule) return true;
+    if (isCampaignExpired(rule)) return false;
+
+    if (!rule.includes("window:")) return true;
+    const windowPart = rule.split(";").find((s) => s.startsWith("window:")) || rule;
+    const parts = windowPart.replace("window:", "").split("-");
+    if (parts.length !== 2) return true;
+    const [startStr, endStr] = parts;
+    const [startH, startM] = startStr.split(":").map(Number);
+    const [endH, endM] = endStr.split(":").map(Number);
+    if (isNaN(startH) || isNaN(endH)) return true;
+
+    // Zona waktu WIB (UTC+7)
+    const nowWIB = new Date(Date.now() + 7 * 60 * 60 * 1000);
+    const currentMinutes = nowWIB.getUTCHours() * 60 + nowWIB.getUTCMinutes();
+    const startMinutes = startH * 60 + (startM || 0);
+    const endMinutes = endH * 60 + (endM || 0);
+
+    return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+};
+
 export const executeCampaignBlast = async (tenantId: number, campaignId: number) => {
     // 1. Ambil detail campaign beserta template & versinya
     const campaign = await prisma.campaign.findFirst({
@@ -100,8 +133,33 @@ export const executeCampaignBlast = async (tenantId: number, campaignId: number)
             const version = campaign.templateVersion;
             const channel = campaign.channel;
             let isQuotaExceeded = false;
+            let isWindowClosed = false;
+            let isExpired = false;
+
+            const isSimulation =
+                process.env.SIMULATE_BLAST === "true" ||
+                Boolean(campaign.recurrenceRule?.includes("simulate:true")) ||
+                Boolean(campaign.name?.toLowerCase().includes("[simulasi]"));
+
+            if (isSimulation) {
+                console.log(`🧪 [Worker] Mode Simulasi Database Aktif untuk Campaign #${campaign.id}. Tidak ada pesan nyata yang dikirim.`);
+            }
 
             for (const recipient of recipients) {
+                // Cek apakah kampanye telah kedaluwarsa (Cutoff Date)
+                if (isCampaignExpired(campaign.recurrenceRule)) {
+                    console.log(`⏹️ [Worker] Kampanye #${campaign.id} telah melewati batas akhir tanggal (${campaign.recurrenceRule}). Menghentikan sisa pengiriman.`);
+                    isExpired = true;
+                    break;
+                }
+
+                // Cek jam operasional pengiriman (Sending Window) - diabaikan jika mode simulasi
+                if (!isSimulation && !isWithinSendingWindow(campaign.recurrenceRule)) {
+                    console.log(`⏸️ [Worker] Jam saat ini berada di luar rentang jam kerja (${campaign.recurrenceRule}). Pengiriman dijeda.`);
+                    isWindowClosed = true;
+                    break;
+                }
+
                 const contact = recipient.contact;
 
                 // Cek apakah kontak tidak aktif atau pernah opt-out
@@ -141,7 +199,12 @@ export const executeCampaignBlast = async (tenantId: number, campaignId: number)
                 let errorMessage: string | null = null;
                 // 4b. Routing pengiriman ke saluran terkait
                 try {
-                    if (channel === "whatsapp_qr") {
+                    if (isSimulation) {
+                        // Simulasi sukses di level database tanpa request keluar jaringan
+                        await sleep(50);
+                        isSuccess = true;
+                        providerMessageId = `sim_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+                    } else if (channel === "whatsapp_qr") {
                         const targetPhone = contact.whatsappNumber || contact.phone;
                         if (!targetPhone) {
                             throw new Error("Kontak tidak memiliki nomor WhatsApp");
@@ -205,7 +268,7 @@ export const executeCampaignBlast = async (tenantId: number, campaignId: number)
                     data: {
                         campaignRecipientId: recipient.id,
                         eventType: recipientStatus,
-                        rawPayloadJson: {
+                        payloadJson: {
                             channel,
                             isSuccess,
                             providerMessageId,
@@ -233,20 +296,41 @@ export const executeCampaignBlast = async (tenantId: number, campaignId: number)
                     break; // Keluar dari loop for
                 }
                 
-                // 4f. Throttling anti-ban (jeda acak alami antar kontak)
-                if (channel === "whatsapp_qr") {
-                    await randomDelay(5000, 10000); // 5 s/d 10 detik untuk WhatsApp
+                // 4f. Throttling anti-ban (jeda acak alami antar kontak disesuaikan per saluran)
+                if (isSimulation) {
+                    await sleep(30); // Jeda kilat untuk simulasi database
+                } else if (channel === "whatsapp_qr") {
+                    await randomDelay(5000, 10000); // 5 s/d 10 detik untuk WhatsApp (Proteksi Anti-Banned)
+                } else if (channel === "email") {
+                    await randomDelay(400, 1000);   // 0.4 s/d 1 detik untuk Email (SMTP Relay batas lebih longgar)
                 } else {
-                    await randomDelay(1000, 3000);  // 1 s/d 3 detik untuk Email/Telegram
+                    await randomDelay(500, 1500);   // 0.5 s/d 1.5 detik untuk Telegram Bot
                 }
             }
-            // 5. Finalisasi Campaign (Cek apakah di-pause karena kuota atau selesai tuntas)
-            if (isQuotaExceeded) {
+            // 5. Finalisasi Campaign (Cek apakah kedaluwarsa, di-pause, atau selesai tuntas)
+            if (isExpired) {
+                // Tandai sisa penerima yang masih queued sebagai dibatalkan karena kedaluwarsa
+                await prisma.campaignRecipient.updateMany({
+                    where: { campaignId, status: "queued" },
+                    data: {
+                        status: "failed",
+                        errorMessage: "Dibatalkan: Melewati batas akhir tanggal kampanye",
+                    },
+                });
+                await prisma.campaign.update({
+                    where: { id: campaignId },
+                    data: {
+                        status: "sent",
+                        completedAt: new Date(),
+                    },
+                });
+                console.log(`⏹️ [Worker] Campaign #${campaign.id} selesai (sisa antrean dihentikan karena melewati batas tanggal).`);
+            } else if (isQuotaExceeded || isWindowClosed) {
                 await prisma.campaign.update({
                     where: { id: campaignId },
                     data: { status: "paused" },
                 });
-                console.log(`⏸️ [Worker] Campaign #${campaign.id} di-pause otomatis karena kuota harian WhatsApp tercapai.`);
+                console.log(`⏸️ [Worker] Campaign #${campaign.id} di-pause otomatis (${isQuotaExceeded ? "kuota harian tercapai" : "di luar jam kerja"}).`);
             } else {
                 await prisma.campaign.update({
                     where: { id: campaignId },

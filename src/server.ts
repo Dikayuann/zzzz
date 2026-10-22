@@ -17,6 +17,7 @@ import whatsappQrRoutes from './routes/whatsapp-qr.routes';
 import campaignRoutes from './routes/campaign.routes';
 import { restoreActiveWhatsappSessions } from "./services/whatsapp-qr.service";
 import { startTelegramPolling } from "./services/telegram.service";
+import { startCampaignScheduler } from "./services/campaign-scheduler.service";
 
 
 
@@ -59,4 +60,6 @@ app.listen(PORT, () => {
     restoreActiveWhatsappSessions();
     // Memulai polling otomatis Telegram Bot
     startTelegramPolling();
+    // Memulai background scheduler kampanye (auto-start & auto-resume jam kerja)
+    startCampaignScheduler();
 });
